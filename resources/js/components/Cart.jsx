@@ -203,11 +203,20 @@ const Cart = () => {
         productSearchTimerRef.current = window.setTimeout(fetchProducts, 250);
     };
 
+    // Customer bawaan ("Customer Umum") berasal dari database, username-nya tetap.
+    const DEFAULT_CUSTOMER_USERNAME = "customer-umum";
+    const defaultCustomerIdRef = useRef("");
+
     const loadCustomers = () => {
         axios.get("/customer", { headers: { Accept: "application/json" } })
             .then((response) => {
                 const values = response.data || [];
                 setCustomers(values);
+
+                const defaultCustomer = values.find((customer) => customer.username === DEFAULT_CUSTOMER_USERNAME);
+                defaultCustomerIdRef.current = defaultCustomer ? String(defaultCustomer.id) : "";
+                // Pilih customer default hanya jika belum ada customer yang dipilih.
+                setCustomerId((current) => current || defaultCustomerIdRef.current);
             });
     };
 
@@ -328,13 +337,13 @@ const Cart = () => {
                 const customerIds = Object.keys(customerGroups);
                 const customer = customerIds.length === 1
                     ? customerIds[0]
-                    : window.prompt("ID customer (kosong untuk Umum):", customerIds[0] || "");
+                    : window.prompt("ID customer (kosong untuk Customer Umum):", customerIds[0] || "");
                 axios.post("/wishlist/move-to-cart", {
                     name,
                     customer_id: customer || null,
                     outlet_id: outlet.id,
                 }).then(() => {
-                    setCustomerId(customer || "");
+                    setCustomerId(customer || defaultCustomerIdRef.current);
                     setAppliedVouchers([]);
                     loadCart([]);
                     barcodeRef.current?.focus();
@@ -378,7 +387,7 @@ const Cart = () => {
         setCart([]);
         setAppliedVouchers([]);
         setAppliedPromotions([]);
-        setCustomerId("");
+        setCustomerId(defaultCustomerIdRef.current);
         setPaymentMethodId("");
         setPaymentReference("");
         setPaidAmount("");

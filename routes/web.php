@@ -87,9 +87,7 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
     Route::post('/cashier-sessions/{cashierSession}/change-shift', [CashierSessionController::class, 'changeShift'])->name('cashier.change-shift');
     Route::post('/cashier-sessions/{cashierSession}/drawer-entry', [CashierSessionController::class, 'entry'])->name('cashier.drawer-entry');
     Route::post('/cashier-sessions/{cashierSession}/close', [CashierSessionController::class, 'close'])->name('cashier.close');
-    Route::resource('/customer', CustomerController::class);
     Route::resource('/kas', KasController::class);
-    Route::resource('/payment', PaymentMethodController::class);
     Route::get('/outlet/{outlet}/products', [ProductController::class, 'outletProducts'])
         ->name('outlet.products');
     Route::resource('/outlet', OutletController::class);
@@ -320,8 +318,17 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
     Route::get('/laporan/pdf/outlet/all-stock', [LaporanController::class, 'pdfOutletAllStock'])->name('laporan.pdf.outlet.all-stock');
 });
 
+// Customer & daftar payment method dipakai langsung oleh halaman kasir (POS),
+// jadi harus bisa diakses role operasional. Menu sidebar-nya tetap hanya
+// tampil untuk superadmin (lihat layouts/sidebar.blade.php).
+Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->group(function () {
+    Route::resource('/customer', CustomerController::class);
+    Route::get('/payment', [PaymentMethodController::class, 'index'])->name('payment.index');
+});
+
 Route::middleware(['role:superadmin'])->group(function () {
     Route::resource('/admin', AdminController::class);
+    Route::resource('/payment', PaymentMethodController::class)->except(['index']);
 });
 
 require __DIR__ . '/auth.php';

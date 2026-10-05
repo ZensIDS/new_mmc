@@ -306,7 +306,6 @@ const CartTable = ({
                                         autoFocus
                                         defaultMenuIsOpen
                                         options={[
-                                            { value: "", label: "Umum" },
                                             ...customers.map((customer) => ({
                                                 value: customer.id,
                                                 label: `${customer.name}${customer.no_telp ? ` — ${customer.no_telp}` : ""}`,

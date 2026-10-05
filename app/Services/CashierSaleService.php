@@ -143,7 +143,9 @@ class CashierSaleService
 
             $order = Penjualan::create([
                 'code' => $code,
-                'customer_id' => $data['customer_id'] ?? null,
+                'customer_id' => filled($data['customer_id'] ?? null)
+                    ? $data['customer_id']
+                    : \App\Models\User::defaultCustomer()->id,
                 'outlet_id' => $outletId,
                 'kasir_id' => $user->getAuthIdentifier(),
                 'cashier_session_id' => $cashierSession->id,

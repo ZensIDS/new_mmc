@@ -60,6 +60,20 @@
         </li>
         @endif
 
+        {{-- Customer (superadmin only) --}}
+        @if ($role === 'superadmin')
+        <li class="{{ request()->is('customer*') ? 'active' : '' }}">
+            <a href="{{ route('customer.index') }}"><i class="fa fa-bookmark"></i><span>Customer</span></a>
+        </li>
+        @endif
+
+        {{-- Payment Method (superadmin only) --}}
+        @if ($role === 'superadmin')
+        <li class="{{ request()->is('payment*') ? 'active' : '' }}">
+            <a href="{{ route('payment.index') }}"><i class="fa fa-credit-card"></i><span>Payment Method</span></a>
+        </li>
+        @endif
+
         @if (in_array($role, ['superadmin', 'admin-gudang', 'owner']))
         <li class="sidebar-divider"><span>GUDANG</span></li>
         @endif

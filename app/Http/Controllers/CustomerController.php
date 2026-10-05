@@ -21,14 +21,40 @@ class CustomerController extends Controller
         return response()->json($customer);
     }
 
+    /**
+     * Daftar customer; "Customer Umum" selalu di urutan pertama.
+     * Customer Umum otomatis dibuat bila belum ada (default penjualan).
+     */
+    protected function customersQuery()
+    {
+        User::defaultCustomer();
+
+        return User::where('role', 'customer')
+            ->orderByRaw('CASE WHEN username = ? THEN 0 ELSE 1 END', [User::DEFAULT_CUSTOMER_USERNAME])
+            ->orderBy('name');
+    }
+
     public function index(Request $request)
     {
+        $customers = $this->customersQuery()->get();
+
         if ($request->wantsJson()) {
-            return response(User::where('role', 'customer')->get());
+            return response($customers);
         }
 
+        // Jumlah transaksi & total rupiah per customer dalam satu query.
+        // Nilai transaksi sama dengan yang dipakai di daftar penjualan:
+        // grand_total, atau (total - discount) untuk data lama.
+        $stats = Penjualan::query()
+            ->whereNotNull('customer_id')
+            ->selectRaw('customer_id, COUNT(*) as jumlah_transaksi, SUM(COALESCE(grand_total, total - COALESCE(discount, 0), 0)) as total_transaksi')
+            ->groupBy('customer_id')
+            ->get()
+            ->keyBy(fn ($row) => (string) $row->customer_id);
+
         return view('customers.index', [
-            'users' => User::where('role', 'customer')->get(),
+            'users' => $customers,
+            'stats' => $stats,
         ]);
     }
 
@@ -91,13 +117,33 @@ class CustomerController extends Controller
         return redirect(route('customer.index'))->with('toast_success', 'Berhasil Menyimpan Data!');
     }
 
-    public function show(User $user)
+    public function show(User $customer)
     {
-        dd($user);
+        abort_unless($customer->role === 'customer', 404);
+
+        $penjualan = Penjualan::where('customer_id', $customer->id)
+            ->with([
+                'outlet',
+                'kasir',
+                'cashierShift',
+                'items.product' => fn ($q) => $q->withTrashed(),
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return view('customers.show', [
+            'customer' => $customer,
+            'penjualan' => $penjualan,
+            'totalTransaksi' => $penjualan->sum(fn ($row) => $row->final_total),
+        ]);
     }
 
     public function edit(User $customer)
     {
+        if ($customer->isDefaultCustomer()) {
+            return redirect(route('customer.index'))->with('toast_error', 'Customer Umum adalah customer bawaan dan tidak dapat diubah.');
+        }
+
         return view('customers.edit', [
             'customer' => $customer,
         ]);
@@ -105,6 +151,10 @@ class CustomerController extends Controller
 
     public function update(Request $request, User $customer)
     {
+        if ($customer->isDefaultCustomer()) {
+            return redirect(route('customer.index'))->with('toast_error', 'Customer Umum adalah customer bawaan dan tidak dapat diubah.');
+        }
+
         $this->validate($request, [
             'name' => 'required',
             'username' => 'nullable',
@@ -128,6 +178,9 @@ class CustomerController extends Controller
 
     public function destroy(User $customer)
     {
+        if ($customer->isDefaultCustomer()) {
+            return redirect(route('customer.index'))->with('toast_error', 'Customer Umum adalah customer bawaan dan tidak dapat dihapus.');
+        }
 
         $customer->delete();
 

@@ -14,6 +14,9 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
     use SoftDeletes;
 
+    /** Username tetap untuk customer bawaan "Customer Umum" (default penjualan). */
+    public const DEFAULT_CUSTOMER_USERNAME = 'customer-umum';
+
     protected $fillable = [
         'name',
         'username',
@@ -58,5 +61,45 @@ class User extends Authenticatable
     public function outlet()
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    /** Transaksi penjualan milik customer ini (penjualans.customer_id bertipe string). */
+    public function penjualans()
+    {
+        return $this->hasMany(Penjualan::class, 'customer_id');
+    }
+
+    public function isDefaultCustomer(): bool
+    {
+        return $this->role === 'customer' && $this->username === self::DEFAULT_CUSTOMER_USERNAME;
+    }
+
+    /**
+     * Customer Umum: dibuat otomatis kalau belum ada, supaya penjualan tanpa
+     * customer yang dipilih selalu tercatat ke satu customer yang sama.
+     */
+    public static function defaultCustomer(): self
+    {
+        return static::withTrashed()
+            ->where('role', 'customer')
+            ->where('username', self::DEFAULT_CUSTOMER_USERNAME)
+            ->first()
+            ?->restoreIfTrashed()
+            ?? static::create([
+                'name' => 'Umum',
+                'username' => self::DEFAULT_CUSTOMER_USERNAME,
+                'role' => 'customer',
+                'status' => 'active',
+                'password' => \Illuminate\Support\Facades\Hash::make(\Illuminate\Support\Str::random(40)),
+            ]);
+    }
+
+    protected function restoreIfTrashed(): self
+    {
+        if ($this->trashed()) {
+            $this->restore();
+        }
+
+        return $this;
     }
 }
