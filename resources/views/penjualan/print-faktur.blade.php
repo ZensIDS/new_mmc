@@ -45,18 +45,28 @@
     @endphp
     <style>
         /* Continuous form 9,5 x 11 inch = 24,13 x 27,94 cm */
-        /* KALIBRASI: margin = atas kanan bawah kiri. Naikkan kiri kalau huruf awal terpotong, turunkan atas kalau isi terlalu ke bawah. */
-        @page { size: 24.13cm 27.94cm; margin: 0.4cm 0 1cm 2.4cm; }
+        /* @page margin sengaja 0: Chrome mengabaikan margin @page kalau dialog print = "None".
+           Posisi isi diatur lewat variabel di bawah supaya hasilnya sama untuk Default maupun None. */
+        @page { size: 24.13cm 27.94cm; margin: 0; }
+        :root {
+            --geser-kiri: 1cm;   /* KALIBRASI: besarkan kalau huruf kiri masih terpotong / isi kurang ke kanan */
+            --geser-atas: 0.4cm; /* besarkan kalau isi mau turun, kecilkan kalau mau naik */
+            --lebar-isi: 17.8cm; /* kecilkan kalau kanan terpotong, besarkan kalau terlalu jauh dari kanan */
+        }
         * { box-sizing: border-box; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body {
-            width: 18.5cm; /* lebar isi; kecilkan kalau kanan terpotong, besarkan kalau terlalu jauh dari kanan */
-            margin: 0 auto;
+            margin: 0;
             padding: 0;
             font-family: 'Courier New', Courier, monospace;
             font-size: 10pt;
             line-height: 1.3;
             color: #000;
+        }
+        .sheet {
+            width: var(--lebar-isi);
+            margin: var(--geser-atas) 0 0 var(--geser-kiri);
+            padding-left: 0.3cm; /* cadangan supaya huruf pertama (mis. "J") tidak terpotong */
         }
         .row { display: flex; justify-content: space-between; gap: 0.6cm; }
         .col-left { flex: 1 1 55%; }
@@ -109,17 +119,14 @@
         .no-print .papers a { flex: 1 1 30%; }
         .no-print .papers a.active { background: #e8f0fe; border-color: #1a56db; font-weight: bold; }
         .no-print .tips { margin-top: 10px; padding: 8px 10px; background: #fff8e1; border: 1px solid #f0d98a; border-radius: 4px; font-size: 12px; line-height: 1.5; text-align: left; }
-        @media screen {
-            body { padding-top: 0.5cm; }
-        }
         @media print {
-            body { width: 18.5cm; margin: 0; }
             .no-print { display: none !important; }
         }
     </style>
 </head>
 
 <body>
+<div class="sheet">
     <div class="row">
         <div class="col-left">
             <img class="store-logo" src="{{ asset('img/logo.png') }}" alt="{{ $penjualan->outlet?->name ?? 'LUWES' }}">
@@ -211,6 +218,8 @@
     @endif
     <div class="follow">Follow Us <svg style="width:1.1em;height:1.1em;vertical-align:-0.2em" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#000" stroke="none"/></svg> @mmccomputerpacitan</div>
 
+</div>{{-- /.sheet --}}
+
     <div class="no-print">
         <a href="{{ route('outlet.show', $penjualan->outlet_id) }}">Kembali</a>
         <button type="button" class="primary" onclick="window.print(); return false;">Print Faktur</button>
@@ -222,7 +231,7 @@
         <div class="tips">
             <b>Supaya pas di continuous form:</b><br>
             1. Di dialog print pilih printer dot matrix-nya, ukuran kertas <b>24,13 x 27,94 cm</b> (9,5 x 11 inch). Kalau belum ada, buat custom paper size di Printer Properties.<br>
-            2. Margins: <b>Default/None</b>, Scale: <b>100%</b> (jangan "Fit to page").<br>
+            2. Margins: <b>None</b> atau Default (hasilnya sama), Scale: <b>100%</b> (jangan "Fit to page").<br>
             3. Matikan <b>Headers and footers</b>.
         </div>
     </div>
