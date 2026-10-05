@@ -22,3 +22,4 @@ yarn-error.log
 *.pdf
 docker-compose.yml
 composer.lock
+*.zip
