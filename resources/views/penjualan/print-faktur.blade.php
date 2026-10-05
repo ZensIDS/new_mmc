@@ -45,11 +45,12 @@
     @endphp
     <style>
         /* Continuous form 9,5 x 11 inch = 24,13 x 27,94 cm */
-        @page { size: 24.13cm 27.94cm; margin: 1cm 0 1cm 1.8cm; }
+        /* KALIBRASI: margin = atas kanan bawah kiri. Naikkan kiri kalau huruf awal terpotong, turunkan atas kalau isi terlalu ke bawah. */
+        @page { size: 24.13cm 27.94cm; margin: 0.4cm 0 1cm 2.4cm; }
         * { box-sizing: border-box; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body {
-            width: 18cm; /* lebar area cetak aman (di dalam tractor + batas printer) */
+            width: 18.5cm; /* lebar isi; kecilkan kalau kanan terpotong, besarkan kalau terlalu jauh dari kanan */
             margin: 0 auto;
             padding: 0;
             font-family: 'Courier New', Courier, monospace;
@@ -112,7 +113,7 @@
             body { padding-top: 0.5cm; }
         }
         @media print {
-            body { width: 18cm; margin: 0; }
+            body { width: 18.5cm; margin: 0; }
             .no-print { display: none !important; }
         }
     </style>
