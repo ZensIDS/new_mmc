@@ -15,7 +15,7 @@ const selectStyles = {
     menuPortal: (base) => ({ ...base, zIndex: 99999 }),
 };
 
-const ReactSelectField = forwardRef(({ value, onChange, options, placeholder, isClearable = true }, ref) => {
+const ReactSelectField = forwardRef(({ value, onChange, options, placeholder, isClearable = true, autoFocus = false, defaultMenuIsOpen = false }, ref) => {
     const selectedOption = options.find((option) => String(option.value) === String(value ?? "")) || null;
 
     return (
@@ -27,6 +27,8 @@ const ReactSelectField = forwardRef(({ value, onChange, options, placeholder, is
             placeholder={placeholder}
             isClearable={isClearable}
             isSearchable
+            autoFocus={autoFocus}
+            defaultMenuIsOpen={defaultMenuIsOpen}
             styles={selectStyles}
             menuPortalTarget={document.body}
             menuPosition="fixed"

@@ -600,6 +600,7 @@ const Cart = () => {
                         setSelectedCartProductId={setSelectedCartProductId}
                         cartTableRef={cartTableRef}
                         onSyncPromotions={syncPromotions}
+                        onFocusBarcode={() => barcodeRef.current?.focus()}
                     />
                 </div>
             </div>

@@ -45,11 +45,11 @@
     @endphp
     <style>
         /* Continuous form 9,5 x 11 inch = 24,13 x 27,94 cm */
-        @page { size: 24.13cm 27.94cm; margin: 1cm 1.2cm; }
+        @page { size: 24.13cm 27.94cm; margin: 1cm 0 1cm 1.8cm; }
         * { box-sizing: border-box; }
         html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         body {
-            width: 21.73cm; /* 24,13 - (2 x 1,2) cm margin kiri/kanan */
+            width: 18cm; /* lebar area cetak aman (di dalam tractor + batas printer) */
             margin: 0 auto;
             padding: 0;
             font-family: 'Courier New', Courier, monospace;
@@ -81,9 +81,9 @@
         .center { text-align: center; }
         .small { font-size: 9pt; }
         .col-no { width: 1cm; }
-        .col-qty { width: 2.4cm; }
-        .col-price { width: 3cm; }
-        .col-total { width: 3.4cm; }
+        .col-qty { width: 2cm; }
+        .col-price { width: 2.6cm; }
+        .col-total { width: 2.8cm; }
 
         .summary { page-break-inside: avoid; margin-top: 0.3cm; }
         .notes { flex: 1 1 55%; }
@@ -112,7 +112,7 @@
             body { padding-top: 0.5cm; }
         }
         @media print {
-            body { width: auto; margin: 0; }
+            body { width: 18cm; margin: 0; }
             .no-print { display: none !important; }
         }
     </style>
@@ -127,7 +127,7 @@
             @if ($penjualan->outlet?->desc)<div class="small">{{ $penjualan->outlet->desc }}</div>@endif
         </div>
         <div class="col-right">
-            <div class="doc-title">NOTA PENJUALAN</div>
+            <div class="doc-title">FAKTUR PENJUALAN</div>
             <table class="meta">
                 <tr><td>No. Faktur</td><td>:</td><td>{{ $penjualan->code }}</td></tr>
                 <tr><td>Tanggal</td><td>:</td><td>{{ optional($penjualan->created_at)->format('d/m/Y H:i') }}</td></tr>

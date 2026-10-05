@@ -33,12 +33,6 @@
                     <i class="fa fa-exchange"></i> Retur barang
                 </a>
                 @if ($cashierSession)
-                    <button type="button" class="btn btn-xs btn-warning" data-toggle="modal" data-target="#bonModal">
-                        <i class="fa fa-minus-circle"></i> Catat BON
-                    </button>
-                    <button type="button" class="btn btn-xs btn-default" data-toggle="modal" data-target="#drawerCheckModal">
-                        <i class="fa fa-calculator"></i> Cek drawer
-                    </button>
                     <button type="button" class="btn btn-xs btn-warning" data-toggle="modal" data-target="#changeShiftModal">
                         <i class="fa fa-refresh"></i> Ganti shift
                     </button>

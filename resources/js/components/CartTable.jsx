@@ -1,8 +1,24 @@
-import React from "react";
+import React, { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { formatIdNumber, formatRupiah, parseIdNumber } from "../utils";
 import CartTableBody from "./CartTableBody";
 import ReactSelectField from "./ReactSelectField";
 import Vouchers from "./Vouchers";
+
+const modalStyle = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0, 0, 0, .45)",
+    zIndex: 1050,
+    padding: "10vh 15px",
+};
+
+const panelStyle = {
+    background: "#fff",
+    maxWidth: 520,
+    margin: "0 auto",
+    borderRadius: 4,
+    boxShadow: "0 8px 30px rgba(0,0,0,.3)",
+};
 
 const CartTable = ({
     cart,
@@ -49,10 +65,63 @@ const CartTable = ({
     selectedCartProductId,
     setSelectedCartProductId,
     cartTableRef,
+    onFocusBarcode,
 }) => {
     const change = Math.max(0, parseIdNumber(paidAmount) - grandTotal);
     const selectedPaymentMethod = paymentMethods.find((method) => String(method.id) === String(paymentMethodId));
     const requiresPaymentReference = Boolean(paymentMethodId) && !/tunai|cash/i.test(selectedPaymentMethod?.name || "");
+
+    const selectedCustomer = customers.find((customer) => String(customer.id) === String(customerId));
+    const customerLabel = selectedCustomer?.name || "Umum";
+    const paymentLabel = selectedPaymentMethod?.name || "Tunai";
+
+    // Customer (F4) & Metode Pembayaran (F7) hanya dibuka lewat shortcut keyboard.
+    const [customerModalOpen, setCustomerModalOpen] = useState(false);
+    const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+    const referenceInputRef = useRef(null);
+
+    const closeCustomerModal = () => {
+        setCustomerModalOpen(false);
+        onFocusBarcode?.();
+    };
+    const closePaymentModal = () => {
+        setPaymentModalOpen(false);
+        onFocusBarcode?.();
+    };
+
+    useImperativeHandle(customerInputRef, () => ({
+        focus: () => {
+            setPaymentModalOpen(false);
+            setCustomerModalOpen(true);
+        },
+    }), []);
+
+    useImperativeHandle(paymentMethodInputRef, () => ({
+        focus: () => {
+            setCustomerModalOpen(false);
+            setPaymentModalOpen(true);
+        },
+    }), []);
+
+    // Dipakai saat Process ditekan tapi Nomor Referensi masih kosong: buka popup pembayaran.
+    useImperativeHandle(paymentReferenceInputRef, () => ({
+        focus: () => {
+            setCustomerModalOpen(false);
+            setPaymentModalOpen(true);
+            window.setTimeout(() => referenceInputRef.current?.focus(), 80);
+        },
+    }), []);
+
+    useEffect(() => {
+        const closeOnEscape = (event) => {
+            if (event.key !== "Escape") return;
+            setCustomerModalOpen(false);
+            setPaymentModalOpen(false);
+        };
+        window.addEventListener("keydown", closeOnEscape);
+
+        return () => window.removeEventListener("keydown", closeOnEscape);
+    }, []);
 
     return (
         <>
@@ -130,51 +199,11 @@ const CartTable = ({
                 onSyncPromotions={onSyncPromotions}
             />
             <div className="row">
-                <div className="col-md-6">
-                    <label>Customer <small>(F4)</small></label>
-                    <ReactSelectField
-                        ref={customerInputRef}
-                        value={customerId}
-                        onChange={setCustomerId}
-                        placeholder="Pilih customer"
-                        isClearable={false}
-                        options={[
-                            { value: "", label: "Umum" },
-                            ...customers.map((customer) => ({
-                                value: customer.id,
-                                label: `${customer.name}${customer.no_telp ? ` — ${customer.no_telp}` : ""}`,
-                            })),
-                        ]}
-                    />
-                </div>
-                <div className="col-md-6">
-                    <label>Metode Pembayaran <small>(F7)</small></label>
-                    <ReactSelectField
-                        ref={paymentMethodInputRef}
-                        value={paymentMethodId}
-                        onChange={setPaymentMethodId}
-                        placeholder="Pilih metode pembayaran"
-                        isClearable={false}
-                        options={[
-                            { value: "", label: "Tunai / belum dipilih" },
-                            ...paymentMethods.map((method) => ({ value: method.id, label: method.name })),
-                        ]}
-                    />
-                    {requiresPaymentReference && (
-                        <div className="form-group" style={{ marginTop: 10 }}>
-                            <label>Nomor Referensi <span className="text-danger">*</span></label>
-                            <input
-                                ref={paymentReferenceInputRef}
-                                type="text"
-                                className="form-control"
-                                placeholder="Nomor transaksi / referensi pembayaran"
-                                value={paymentReference}
-                                required
-                                aria-required="true"
-                                onChange={(event) => setPaymentReference(event.target.value)}
-                            />
-                        </div>
-                    )}
+                <div className="col-md-12">
+                    <p className="text-muted" style={{ margin: "8px 0 0" }}>
+                        Customer: <b>{customerLabel}</b> &nbsp;|&nbsp; Pembayaran: <b>{paymentLabel}</b>
+                        {requiresPaymentReference && paymentReference.trim() ? <> (Ref: {paymentReference.trim()})</> : null}
+                    </p>
                 </div>
                 <div className="col-md-6">
                     <label>Uang Diterima <span className="text-danger">*</span> <small>(F9)</small></label>
@@ -217,6 +246,91 @@ const CartTable = ({
                 </button>
                 </div>
             </div>
+            {customerModalOpen && (
+                <div style={modalStyle} role="dialog" aria-modal="true" onClick={closeCustomerModal}>
+                    <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
+                        <div className="box-header with-border">
+                            <button type="button" className="close" onClick={closeCustomerModal} aria-label="Tutup">&times;</button>
+                            <h3 className="box-title"><i className="fa fa-user"></i> Customer <small>(F4)</small></h3>
+                        </div>
+                        <div className="box-body">
+                            <ReactSelectField
+                                value={customerId}
+                                onChange={(value) => {
+                                    setCustomerId(value);
+                                    closeCustomerModal();
+                                }}
+                                placeholder="Pilih customer"
+                                isClearable={false}
+                                autoFocus
+                                defaultMenuIsOpen
+                                options={[
+                                    { value: "", label: "Umum" },
+                                    ...customers.map((customer) => ({
+                                        value: customer.id,
+                                        label: `${customer.name}${customer.no_telp ? ` — ${customer.no_telp}` : ""}`,
+                                    })),
+                                ]}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+            {paymentModalOpen && (
+                <div style={modalStyle} role="dialog" aria-modal="true" onClick={closePaymentModal}>
+                    <div style={panelStyle} onClick={(event) => event.stopPropagation()}>
+                        <div className="box-header with-border">
+                            <button type="button" className="close" onClick={closePaymentModal} aria-label="Tutup">&times;</button>
+                            <h3 className="box-title"><i className="fa fa-credit-card"></i> Metode Pembayaran <small>(F7)</small></h3>
+                        </div>
+                        <div className="box-body">
+                            <ReactSelectField
+                                value={paymentMethodId}
+                                onChange={(value) => {
+                                    setPaymentMethodId(value);
+                                    const method = paymentMethods.find((item) => String(item.id) === String(value));
+                                    const needsReference = Boolean(value) && !/tunai|cash/i.test(method?.name || "");
+                                    if (needsReference) {
+                                        window.setTimeout(() => referenceInputRef.current?.focus(), 80);
+                                    } else {
+                                        closePaymentModal();
+                                    }
+                                }}
+                                placeholder="Pilih metode pembayaran"
+                                isClearable={false}
+                                autoFocus
+                                defaultMenuIsOpen
+                                options={[
+                                    { value: "", label: "Tunai / belum dipilih" },
+                                    ...paymentMethods.map((method) => ({ value: method.id, label: method.name })),
+                                ]}
+                            />
+                            {requiresPaymentReference && (
+                                <div className="form-group" style={{ marginTop: 10 }}>
+                                    <label>Nomor Referensi <span className="text-danger">*</span></label>
+                                    <input
+                                        ref={referenceInputRef}
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Nomor transaksi / referensi pembayaran"
+                                        value={paymentReference}
+                                        required
+                                        aria-required="true"
+                                        onChange={(event) => setPaymentReference(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                                event.preventDefault();
+                                                if (paymentReference.trim()) closePaymentModal();
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 10 }} onClick={closePaymentModal}>Selesai</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };
