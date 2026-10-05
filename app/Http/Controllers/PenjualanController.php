@@ -122,7 +122,10 @@ class PenjualanController extends Controller
 
     public function print(Penjualan $penjualan)
     {
-        return view('penjualan.print', [
+        // paper=faktur -> faktur penjualan continuous form 9,5 x 11 inch (24,13 x 27,94 cm)
+        $view = request('paper') === 'faktur' ? 'penjualan.print-faktur' : 'penjualan.print';
+
+        return view($view, [
             'penjualan' => $penjualan,
         ]);
     }

@@ -7,17 +7,17 @@
     <title>Struk {{ $penjualan->code }}</title>
     <script>
         // Ingat pilihan kertas per-perangkat, jadi cetak otomatis dari kasir & Re-Print
-        // selalu langsung memakai ukuran terakhir (58 / 80) tanpa harus klik lagi.
+        // selalu langsung memakai ukuran terakhir (58 / 80 / faktur) tanpa harus klik lagi.
         (function () {
             try {
                 var url = new URL(window.location.href);
                 var chosen = url.searchParams.get('paper');
-                if (chosen === '58' || chosen === '80') {
+                if (chosen === '58' || chosen === '80' || chosen === 'faktur') {
                     window.localStorage.setItem('receipt-paper', chosen);
                     return;
                 }
                 var saved = window.localStorage.getItem('receipt-paper');
-                if (saved === '58' || saved === '80') {
+                if (saved === '58' || saved === '80' || saved === 'faktur') {
                     url.searchParams.set('paper', saved);
                     window.location.replace(url.toString());
                 }
@@ -69,7 +69,7 @@
         }
         .center { text-align: center; }
         .bold { font-weight: bold; }
-        .store-logo { max-width: {{ $paper === '58' ? '28mm' : '40mm' }}; max-height: 18mm; margin-bottom: 1mm; filter: grayscale(1) contrast(1.6); }
+        .store-logo { max-width: {{ $paper === '58' ? '28mm' : '40mm' }}; max-height: 18mm; margin-bottom: 1mm; filter: grayscale(1) contrast(2); }
         .store-name { font-size: {{ $titleFont }}; font-weight: normal; letter-spacing: .5px; word-break: break-word; }
         .small { font-size: {{ $smallFont }}; }
         hr { border: none; border-top: 1px dashed #000; margin: 5px 0; }
@@ -92,6 +92,7 @@
         .grand-total { font-size: {{ $totalFont }}; font-weight: normal; }
         .footer-msg { margin-top: 6px; font-size: {{ $smallFont }}; word-break: break-word; }
         .footer-msg img { max-width: 100%; }
+        .follow { margin-top: 4px; font-size: {{ $smallFont }}; text-align: center; word-break: break-word; }
 
         /* Tampilan layar saja (tombol & petunjuk) */
         .no-print { margin: 14px auto 0; width: 100%; max-width: 340px; font-family: Arial, sans-serif; font-weight: normal; font-size: 14px; }
@@ -111,13 +112,10 @@
 
 <body>
     <div class="center">
-        @if ($penjualan->outlet?->logo)
-            <img class="store-logo" src="{{ asset($penjualan->outlet->logo) }}" alt="{{ $penjualan->outlet->name }}">
-        @endif
+        <img class="store-logo" src="{{ asset('img/logo.png') }}" alt="{{ $penjualan->outlet?->name ?? 'LUWES' }}">
         <div class="store-name">{{ $penjualan->outlet?->name ?? 'LUWES' }}</div>
         @if ($penjualan->outlet?->alamat)<div class="small">{{ $penjualan->outlet->alamat }}</div>@endif
         @if ($penjualan->outlet?->desc)<div class="small">{{ $penjualan->outlet->desc }}</div>@endif
-        <!--@if ($penjualan->outlet?->npwp)<div class="small">NPWP : {{ $penjualan->outlet->npwp }}</div>@endif-->
     </div>
 
     <hr>
@@ -179,6 +177,7 @@
     @else
         <div class="center footer-msg"><div>Harga Barang Sudah termasuk PPN</div><div>Terima Kasih Atas Kunjungan Anda</div></div>
     @endif
+    <div class="follow">Follow Us <svg style="width:1.1em;height:1.1em;vertical-align:-0.2em" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#000" stroke="none"/></svg> @mmccomputerpacitan</div>
 
     <div class="no-print">
         <a href="{{ route('outlet.show', $penjualan->outlet_id) }}">Kembali</a>
@@ -186,6 +185,7 @@
         <div class="papers">
             <a href="{{ route('penjualan.print', [$penjualan, 'paper' => '58']) }}" class="{{ $paper === '58' ? 'active' : '' }}">Kertas 58mm</a>
             <a href="{{ route('penjualan.print', [$penjualan, 'paper' => '80']) }}" class="{{ $paper === '80' ? 'active' : '' }}">Kertas 80mm</a>
+            <a href="{{ route('penjualan.print', [$penjualan, 'paper' => 'faktur']) }}">Faktur</a>
         </div>
         <div class="tips">
             <b>Supaya pas di printer thermal:</b><br>
