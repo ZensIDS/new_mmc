@@ -6,6 +6,7 @@ use App\Models\CashierDrawerEntry;
 use App\Models\CashierSession;
 use App\Models\CashierShift;
 use App\Models\Outlet;
+use App\Models\Penjualan;
 use App\Support\OutletAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -179,6 +180,26 @@ class CashierSessionController extends Controller
         $sessions = $query->get();
 
         $sessionIds = $sessions->pluck('id');
+
+        // Jumlah transaksi & total penjualan (semua metode bayar) per sesi dan per
+        // nama kasir (shift), dihitung dalam satu query.
+        $saleRows = Penjualan::query()
+            ->whereIn('cashier_session_id', $sessionIds->all() ?: [0])
+            ->where('status', 'paid')
+            ->selectRaw('cashier_session_id, cashier_shift_id, COUNT(*) as sale_count, SUM(COALESCE(grand_total, total, 0)) as sale_total')
+            ->groupBy('cashier_session_id', 'cashier_shift_id')
+            ->get();
+        $sessionSales = $saleRows->groupBy('cashier_session_id')->map(fn ($rows) => [
+            'count' => (int) $rows->sum('sale_count'),
+            'total' => (float) $rows->sum('sale_total'),
+        ]);
+        $shiftSales = $saleRows->whereNotNull('cashier_shift_id')
+            ->keyBy('cashier_shift_id')
+            ->map(fn ($row) => [
+                'count' => (int) $row->sale_count,
+                'total' => (float) $row->sale_total,
+            ]);
+
         $entryIds = $sessions->flatMap(fn (CashierSession $session) => $session->drawerEntries->pluck('id'));
         $activities = Activity::query()
             ->where('log_name', 'Cashier')
@@ -198,7 +219,7 @@ class CashierSessionController extends Controller
             ->limit(100)
             ->get();
 
-        return view('cashier.history', compact('sessions', 'activities'));
+        return view('cashier.history', compact('sessions', 'activities', 'sessionSales', 'shiftSales'));
     }
 
     private function ensureOperationAccess(CashierSession $cashierSession): void

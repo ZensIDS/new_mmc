@@ -19,6 +19,7 @@
                             <th>Periode</th>
                             <th>Outlet / Kassa</th>
                             <th>Saldo awal</th>
+                            <th>Total penjualan</th>
                             <th>Penjualan tunai</th>
                             <th>BON</th>
                             <th>Setoran tutup</th>
@@ -45,12 +46,19 @@
                                     <small>Kassa (akun): {{ $session->cashier?->name ?? 'User dihapus' }}</small><br>
                                     <small>Nama kasir:</small>
                                     @forelse ($session->shifts as $shift)
-                                        <br><small>&bull; {{ $shift->name }} ({{ $shift->started_at?->format('H:i') }}–{{ $shift->ended_at?->format('H:i') ?? 'sekarang' }})</small>
+                                        @php($shiftSale = $shiftSales[$shift->id] ?? ['count' => 0, 'total' => 0])
+                                        <br><small>&bull; {{ $shift->name }} ({{ $shift->started_at?->format('H:i') }}–{{ $shift->ended_at?->format('H:i') ?? 'sekarang' }}):
+                                            <strong>{{ $shiftSale['count'] }} transaksi</strong> &middot; @currency($shiftSale['total'])</small>
                                     @empty
                                         <small>—</small>
                                     @endforelse
                                 </td>
                                 <td>@currency($session->opening_cash)</td>
+                                <td>
+                                    @php($totalSale = $sessionSales[$session->id] ?? ['count' => 0, 'total' => 0])
+                                    @currency($totalSale['total'])<br>
+                                    <small class="text-muted">{{ $totalSale['count'] }} transaksi</small>
+                                </td>
                                 <td>@currency($sessionSummary['cash_sales'] ?? 0)</td>
                                 <td class="text-danger">@currency($sessionSummary['cash_out'] ?? 0)</td>
                                 <td>@currency($session->cash_removed)</td>
@@ -67,7 +75,7 @@
                                 </td>
                             </tr>
                             <tr class="active">
-                                <td colspan="11">
+                                <td colspan="12">
                                     <strong>Catatan:</strong> {{ $session->closing_note ?: $session->opening_note ?: '-' }}
                                     @if ($session->drawerEntries->isNotEmpty())
                                         <span style="margin-left:18px;"><strong>Aktivitas drawer:</strong>
@@ -83,7 +91,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="11" class="text-center text-muted">Belum ada history kasir.</td></tr>
+                            <tr><td colspan="12" class="text-center text-muted">Belum ada history kasir.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
