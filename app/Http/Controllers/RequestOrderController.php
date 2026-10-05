@@ -1,0 +1,1321 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Category;
+use App\Models\Outlet;
+use App\Models\Product;
+use App\Models\RequestOrder;
+use App\Models\RequestOrderItem;
+use App\Models\RequestOrderNote;
+use App\Models\PickingList;
+use App\Models\PickingListItem;
+use App\Models\Stock;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class RequestOrderController extends Controller
+{
+    public function index()
+    {
+        // Halaman awal cuma butuh daftar outlet untuk filter dropdown — data request tidak di-query di sini.
+        $outlets = Outlet::orderBy('name')->get();
+
+        return view('request-orders.index', compact('outlets'));
+    }
+
+    public function getIndexData(Request $request)
+    {
+        $draw        = (int) $request->input('draw');
+        $start       = max((int) $request->input('start', 0), 0);
+        $length      = (int) $request->input('length', 25);
+        $length      = $length > 0 ? min($length, 100) : 25;
+        $searchValue = trim((string) ($request->input('search.value', '')));
+        $outletId    = $request->input('outlet_id');
+
+        $orderColIndex = (int) $request->input('order.0.column', 4);
+        $orderDir      = strtolower($request->input('order.0.dir', 'desc')) === 'asc' ? 'asc' : 'desc';
+
+        $sortableColumns = [
+            1 => 'request_orders.code',
+            2 => 'outlets.name',
+            4 => 'request_orders.request_date',
+            5 => 'request_orders.status',
+        ];
+        $orderBy = $sortableColumns[$orderColIndex] ?? 'request_orders.created_at';
+
+        $user = auth()->user();
+
+        $base = RequestOrder::query()
+            ->leftJoin('outlets', 'outlets.id', '=', 'request_orders.owner_id');
+
+        // if ($user->role === 'staff-outlet') {
+        //     $base->where('request_orders.owner_id', $user->outlet_id);
+        // }
+
+        if ($outletId) {
+            $base->where('request_orders.owner_id', $outletId);
+        }
+
+        $recordsTotal = (clone $base)->count('request_orders.id');
+
+        // ==== SEARCH: meniru "smart search" DataTables, tapi tetap ringan ====
+        // DataTables (client-side) memecah input jadi kata per kata dan mencari baris
+        // yang mengandung SEMUA kata itu di kolom manapun, tidak peduli urutan/kerapatan.
+        // Contoh: "wing surya" tetap match "Wings Surya" karena "wing" dan "surya"
+        // masing-masing ketemu sebagai substring, walau tidak nempel persis.
+        //
+        // LIKE '%wing surya%' (satu string utuh) TIDAK match "Wings Surya" karena
+        // butuh substring persis "wing surya" -> data terasa "hilang" di versi lama.
+        //
+        // Fix: pecah $searchValue jadi per kata, AND-kan syarat antar kata (tiap kata
+        // wajib match di salah satu kolom), OR-kan antar kolom untuk kata yang sama.
+        //
+        // Kolom yang di-cover juga diperluas: kode dasarnya cuma cek code request &
+        // nama outlet -- padahal Blade lama menampilkan "requested_by" (nama user)
+        // dan detail produk per item, yang kemungkinan besar dulu ikut ke-search
+        // lewat DataTables client-side. Ditambahkan di sini supaya tidak "hilang" lagi.
+        //
+        // Supaya tetap ringan untuk ratusan ribu baris:
+        //  - Query dasar tetap hanya join outlets, tidak eager-load items/produk di sini.
+        //  - Pencarian ke requestedBy & produk pakai whereHas (EXISTS subquery),
+        //    bukan JOIN penuh, supaya tidak menggandakan baris request order.
+        //  - Jumlah kata dibatasi (maks 5) supaya query tidak bisa dibuat sangat berat.
+        //  - Pastikan ada index di request_orders.code, outlets.name, users.name,
+        //    products.name, products.code, serta foreign key request_order_items
+        //    (request_order_id / product_id).
+        if ($searchValue !== '') {
+            $searchWords = preg_split('/\s+/', $searchValue, -1, PREG_SPLIT_NO_EMPTY);
+            $searchWords = array_slice($searchWords, 0, 5); // batasi biar tidak disalahgunakan
+
+            $base->where(function ($q) use ($searchWords) {
+                foreach ($searchWords as $word) {
+                    $q->where(function ($qw) use ($word) {
+                        $qw->where('request_orders.code', 'like', "%{$word}%")
+                            ->orWhere('outlets.name', 'like', "%{$word}%")
+                            ->orWhereHas('requestedBy', function ($qu) use ($word) {
+                                $qu->where('name', 'like', "%{$word}%");
+                            })
+                            ->orWhereHas('items.product', function ($qp) use ($word) {
+                                $qp->where('name', 'like', "%{$word}%")
+                                    ->orWhere('code', 'like', "%{$word}%");
+                            });
+                    });
+                }
+            });
+        }
+
+        $recordsFiltered = (clone $base)->count('request_orders.id');
+
+        $pageIds = $base
+            ->orderBy($orderBy, $orderDir)
+            // Tie-breaker unik. Kolom seperti "status" hanya punya 4 nilai berbeda,
+            // jadi banyak baris kembar. Tanpa secondary order by kolom unik, urutan
+            // hasil untuk baris bernilai sama TIDAK dijamin konsisten antar query ->
+            // saat DataTables pindah halaman / re-query gara-gara search, ada baris
+            // yang bisa terlewat (tidak pernah muncul di offset manapun) atau dobel.
+            ->orderBy('request_orders.id', $orderDir)
+            ->offset($start)
+            ->limit($length)
+            ->pluck('request_orders.id');
+
+        // Relasi berat cuma dimuat untuk baris di halaman ini.
+        // 'pickingList' ditambahkan di sini -- sebelumnya dipakai di Blade tanpa eager load (N+1 tersembunyi).
+        $requests = RequestOrder::with(['owner', 'requestedBy', 'items.product', 'pickingList'])
+            ->whereIn('id', $pageIds)
+            ->get()
+            ->sortBy(fn($r) => array_search($r->id, $pageIds->all()))
+            ->values();
+
+        $data = $requests->map(function ($value) use ($user) {
+            // ==== Kolom Status ====
+            $statusMap = [
+                'pending'  => ['label-warning', 'Pending'],
+                'approved' => ['label-success', 'Approved'],
+                'partial'  => ['label-info', 'Partial'],
+                'rejected' => ['label-danger', 'Rejected'],
+            ];
+            [$statusClass, $statusText] = $statusMap[$value->status] ?? ['label-default', $value->status];
+            $statusHtml = '<span class="label ' . $statusClass . '">' . e($statusText) . '</span>';
+
+            // ==== Kolom Items ====
+            $totalItems = $value->items->count();
+            $itemsHtml = '<ul class="list-unstyled" style="margin:0">';
+            foreach ($value->items as $index => $item) {
+                $extraClass = $index >= 3 ? ' extra-item-ro-' . $value->id : '';
+                $style = $index >= 3 ? ' style="display:none"' : '';
+                $k = $item->product?->konversiDisplay($item->qty_requested);
+                $kLabel = ($k && $k !== '-') ? ' <span class="label label-info">' . e($k) . '</span>' : '';
+                $notesLabel = ! empty($item->notes) ? ' <span class="text-muted">– ' . e($item->notes) . '</span>' : '';
+
+                $itemsHtml .= '<li class="item-ro-' . $value->id . $extraClass . '"' . $style . '>'
+                    . '<small>' . e($item->product->code ?? 'Code') . ' | ' . e($item->product->name ?? 'Produk') . ': ' . e($item->qty_requested) . $kLabel . $notesLabel . '</small>'
+                    . '</li>';
+            }
+            $itemsHtml .= '</ul>';
+
+            if ($totalItems > 3) {
+                $itemsHtml .= '<a href="javascript:void(0)" class="btn-toggle-ro-items" data-target="' . $value->id . '" data-state="closed" style="display:inline-block; margin-top:4px;">'
+                    . '<span class="label label-default">Selengkapnya (' . ($totalItems - 3) . ')</span></a>';
+            }
+
+            // ==== Kolom Aksi (persis logic Blade lama) ====
+            $aksiHtml = '';
+
+            if (($value->status === 'approved' || $value->status === 'partial') && ! isset($value->pickingList)) {
+                $aksiHtml .= '<form action="' . route('picking-lists.generate', $value->id) . '" method="post">'
+                    . csrf_field()
+                    . '<button class="btn btn-xs btn-primary"><i class="fa fa-list"></i> Generate Picking List</button></form> ';
+            }
+
+            if ($user->role === 'staff-outlet') {
+                if ($value->status === 'approved' || $value->status === 'partial') {
+                    $aksiHtml .= '<a class="btn-xs btn btn-default" href="' . route('request-orders.show', $value->id) . '"><i class="fa fa-eye"></i> Detail</a> ';
+                } else {
+                    $aksiHtml .= '<a class="btn-xs btn btn-primary" href="' . route('request-orders.edit', $value->id) . '"><i class="fa fa-edit"></i> Edit</a> ';
+                    $aksiHtml .= '<a class="btn-xs btn btn-default" href="' . route('request-orders.show', $value->id) . '"><i class="fa fa-eye"></i> Detail</a> ';
+                    $aksiHtml .= '<form action="' . route('request-orders.destroy', $value->id) . '" method="POST" style="display:inline-block;" onsubmit="return confirm(\'Yakin hapus request ini?\')">'
+                        . csrf_field() . method_field('DELETE')
+                        . '<button type="submit" class="btn-xs btn btn-danger"><i class="fa fa-trash"></i> Hapus</button></form> ';
+                }
+            } else {
+                if ($value->status === 'approved' || $value->status === 'partial') {
+                    $aksiHtml .= '<a class="btn-xs btn btn-default" href="' . route('request-orders.show', $value->id) . '"><i class="fa fa-eye"></i> Detail</a> ';
+                } else {
+                    if ($user->role !== 'admin-gudang') {
+                        $aksiHtml .= '<a class="btn-xs btn btn-primary" href="' . route('request-orders.edit', $value->id) . '"><i class="fa fa-edit"></i> Edit</a> ';
+                    }
+
+                    if (! isset($value->owner_id)) {
+                        $aksiHtml .= '<a class="btn-xs btn btn-danger" href="#"> Outlet Belum Ditentukan</a> ';
+                    } else {
+                        $aksiHtml .= '<a class="btn-xs btn btn-default" href="' . route('request-orders.process', $value->id) . '"><i class="fa fa-eye"></i> Detail</a> ';
+                    }
+
+                    if ($user->role !== 'admin-gudang') {
+                        $aksiHtml .= '<form action="' . route('request-orders.destroy', $value->id) . '" method="POST" style="display:inline-block;" onsubmit="return confirm(\'Yakin hapus request ini?\')">'
+                            . csrf_field() . method_field('DELETE')
+                            . '<button type="submit" class="btn-xs btn btn-danger"><i class="fa fa-trash"></i> Hapus</button></form> ';
+                    }
+                }
+            }
+
+            $aksiHtml .= '<a class="btn-xs btn btn-success" href="' . route('laporan.request-order', $value->id) . '"><i class="fa fa-file-excel-o"></i> Export</a>';
+
+            return [
+                'id'            => $value->id,
+                'code'          => $value->code,
+                'owner'         => $value->owner->name ?? '-',
+                'requested_by'  => $value->requestedBy->name ?? '-',
+                'request_date'  => $value->request_date->format('d-m-Y'),
+                'status_html'   => $statusHtml,
+                'items_html'    => $itemsHtml,
+                'aksi_html'     => $aksiHtml,
+            ];
+        });
+
+        return response()->json([
+            'draw'            => $draw,
+            'recordsTotal'    => $recordsTotal,
+            'recordsFiltered' => $recordsFiltered,
+            'data'            => $data->values(),
+        ]);
+    }
+
+    public function create()
+    {
+        // Langsung insert ke DB, status pending, kode digenerate sekarang juga
+        $lastRequest = RequestOrder::withTrashed()->latest('id')->first();
+        $nextNumber  = $lastRequest ? ((int) substr($lastRequest->code, 3) + 1) : 1;
+        $code        = 'REQ' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+
+        $requestOrder = RequestOrder::create([
+            'code'         => $code,
+            'owner_id'     => null,
+            'requested_by' => auth()->id(),
+            'request_date' => now(),
+            'notes'        => null,
+            'status'       => 'pending',
+        ]);
+
+        // Langsung redirect ke halaman edit — create.blade tidak dipakai lagi sebagai form kosong,
+        // create dan edit jadi satu alur yang sama
+        return redirect()->route('request-orders.edit', $requestOrder);
+    }
+
+    public function autosaveHeader(Request $request, RequestOrder $requestOrder)
+    {
+        abort_unless($requestOrder->requested_by === auth()->id(), 403);
+
+        $data = $request->validate([
+            'owner_id'     => 'nullable|exists:outlets,id',
+            'request_date' => 'nullable|date',
+            'notes'        => 'nullable|string',
+        ]);
+
+        $requestOrder->update($data);
+
+        return response()->json(['status' => 'ok', 'saved_at' => now()->toDateTimeString()]);
+    }
+
+    public function autosaveItem(Request $request, RequestOrder $requestOrder)
+    {
+        $data = $request->validate([
+            'id'            => 'nullable|integer|exists:request_order_items,id',
+            'product_id'    => 'required|exists:products,id',
+            'qty_requested' => 'required|numeric|min:0',
+            'notes'         => 'nullable|string',
+        ]);
+
+        $duplicate = $requestOrder->items()
+            ->where('product_id', $data['product_id'])
+            ->when(!empty($data['id']), fn($q) => $q->where('id', '!=', $data['id']))
+            ->exists();
+
+        if ($duplicate) {
+            return response()->json(['status' => 'error', 'message' => 'Produk sudah ada di list.'], 422);
+        }
+
+        $item = RequestOrderItem::updateOrCreate(
+            ['id' => $data['id'] ?? null, 'request_order_id' => $requestOrder->id],
+            [
+                'product_id'    => $data['product_id'],
+                'stock_id'      => null,
+                'qty_requested' => $data['qty_requested'],
+                'notes'         => $data['notes'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'ok', 'item_id' => $item->id]);
+    }
+
+    public function destroyItem(RequestOrder $requestOrder, RequestOrderItem $item)
+    {
+        abort_unless($item->request_order_id == $requestOrder->id, 404);
+        $item->delete();
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    public function autosaveNote(Request $request, RequestOrder $requestOrder)
+    {
+        $data = $request->validate([
+            'id'       => 'nullable|integer|exists:request_order_notes,id',
+            'kategori' => 'required|string|max:255',
+            'qty'      => 'required|numeric|min:0',
+            'nama_pj'  => 'nullable|string|max:255',
+        ]);
+
+        $note = RequestOrderNote::updateOrCreate(
+            ['id' => $data['id'] ?? null, 'request_order_id' => $requestOrder->id],
+            [
+                'kategori' => $data['kategori'],
+                'qty'      => (int) $data['qty'],
+                'nama_pj'  => $data['nama_pj'] ?? null,
+            ]
+        );
+
+        return response()->json(['status' => 'ok', 'note_id' => $note->id]);
+    }
+
+    public function destroyNote(RequestOrder $requestOrder, RequestOrderNote $note)
+    {
+        abort_unless($note->request_order_id == $requestOrder->id, 404);
+        $note->delete();
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    public function finish(Request $request, RequestOrder $requestOrder)
+    {
+        $request->validate([
+            'owner_id'     => 'required|exists:outlets,id',
+            'request_date' => 'required|date',
+        ]);
+
+        if ($requestOrder->items()->count() === 0) {
+            return back()->with('toast_error', 'Minimal harus ada 1 item produk.');
+        }
+
+        // tambahan: pastikan tidak ada item dengan qty 0 yang lolos ke final
+        if ($requestOrder->items()->where('qty_requested', '<=', 0)->exists()) {
+            return back()->with('toast_error', 'Ada item dengan qty 0, mohon lengkapi terlebih dahulu.');
+        }
+
+        $requestOrder->update([
+            'owner_id'     => $request->owner_id,
+            'request_date' => $request->request_date,
+            'notes'        => $request->notes,
+        ]);
+
+        return redirect()->route('request-orders.index')
+            ->with('toast_success', 'Request berhasil dibuat.');
+    }
+
+    public function edit(RequestOrder $requestOrder)
+    {
+        // opsional: kalau request sudah bukan pending lagi (misal sudah diverifikasi),
+        // jangan biarkan diedit lewat halaman ini
+        // abort_if($requestOrder->status !== 'pending', 403, 'Request ini sudah tidak bisa diedit.');
+
+        $requestOrder->load(['items.product', 'additionalNotes']);
+
+        return view('request-orders.edit', [
+            'requestOrder' => $requestOrder,
+            'outlets'      => Outlet::get(),
+            'categories'   => Category::orderBy('name')->get(),
+            // Angka stok di form RO = stok fisik gudang (SUM stocks.qty), sama dengan menu Stok/Produk.
+            // (Validasi alokasi SKU saat picking tetap memakai qty_available.)
+            'products'     => Product::with(['stocks' => function ($q) {
+                $q->where('qty', '>=', 0);
+            }])
+                ->whereHas('stocks', function ($q) {
+                    $q->where('qty', '>=', 0);
+                })
+                ->get()
+                ->map(function ($product) {
+                    $product->total_available = (int) $product->stocks->sum('qty');
+                    return $product;
+                }),
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'owner_id'                   => 'required|exists:outlets,id',
+            'request_date'               => 'required|date',
+            'items'                      => 'required|array',
+            'items.*.product_id'         => 'required|exists:products,id|distinct',
+            'items.*.qty_requested'      => 'required|numeric|min:1',            // changed to numeric
+            'extra_notes'                => 'nullable|array',
+            'extra_notes.*.kategori'     => 'required_with:extra_notes|string|max:255',
+            'extra_notes.*.qty'          => 'required_with:extra_notes|numeric|min:0', // changed to numeric
+            'extra_notes.*.nama_pj'      => 'nullable|string|max:255',
+        ], [
+            'owner_id.required'                     => 'Outlet harus dipilih.',
+            'owner_id.exists'                       => 'Outlet yang dipilih tidak ditemukan.',
+            'request_date.required'                 => 'Tanggal permintaan harus diisi.',
+            'request_date.date'                     => 'Tanggal permintaan harus berupa tanggal yang valid.',
+            'items.required'                        => 'Item harus diisi.',
+            'items.array'                           => 'Item harus berupa array.',
+            'items.*.product_id.required'           => 'Produk harus dipilih.',
+            'items.*.product_id.exists'             => 'Produk yang dipilih tidak ditemukan.',
+            'items.*.product_id.distinct'           => 'Produk tidak boleh sama di baris yang berbeda.',
+            'items.*.qty_requested.required'        => 'Jumlah diminta harus diisi.',
+            'items.*.qty_requested.numeric'         => 'Jumlah diminta harus berupa angka.',
+            'items.*.qty_requested.min'             => 'Jumlah diminta minimal 1.',
+            'extra_notes.array'                     => 'sample barang harus berupa array.',
+            'extra_notes.*.kategori.required_with'  => 'Kategori harus diisi jika ada sample barang.',
+            'extra_notes.*.kategori.string'         => 'Kategori harus berupa teks.',
+            'extra_notes.*.kategori.max'            => 'Kategori maksimal 255 karakter.',
+            'extra_notes.*.qty.required_with'       => 'Jumlah harus diisi jika ada sample barang.',
+            'extra_notes.*.qty.numeric'             => 'Jumlah harus berupa angka.',
+            'extra_notes.*.qty.min'                 => 'Jumlah minimal 0.',
+            'extra_notes.*.nama_pj.string'          => 'Nama penanggung jawab harus berupa teks.',
+            'extra_notes.*.nama_pj.max'             => 'Nama penanggung jawab maksimal 255 karakter.',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $lastRequest = RequestOrder::withTrashed()->latest('id')->first();
+            $nextNumber = $lastRequest ? ((int) substr($lastRequest->code, 3) + 1) : 1;
+            $code = 'REQ' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+
+            $requestOrder = RequestOrder::create([
+                'code' => $code,
+                'owner_id' => $request->owner_id,
+                'requested_by' => auth()->id(),
+                'request_date' => $request->request_date,
+                'notes' => $request->notes,
+                'status' => 'pending',
+            ]);
+
+            foreach ($request->items as $item) {
+                RequestOrderItem::create([
+                    'request_order_id' => $requestOrder->id,
+                    'product_id'       => $item['product_id'],
+                    'stock_id'         => null,
+                    'qty_requested'    => $item['qty_requested'],
+                    'notes'            => $item['notes'] ?? null,
+                ]);
+            }
+
+            foreach ($request->input('extra_notes', []) as $note) {
+                if (! empty($note['kategori'])) {
+                    RequestOrderNote::create([
+                        'request_order_id' => $requestOrder->id,
+                        'kategori'         => $note['kategori'],
+                        'qty'              => (int) ($note['qty'] ?? 0),
+                        'nama_pj'          => $note['nama_pj'] ?? null,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            // return redirect()->route('request-orders.verify', $requestOrder)
+            //     ->with('toast_success', 'Request created successfully. Please assign stocks.');
+
+            return redirect()->route('request-orders.index')
+                ->with('toast_success', 'Request created successfully. Please assign stocks.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return back()->with('toast_error', $e->getMessage());
+        }
+    }
+
+    public function verify(RequestOrder $requestOrder)
+    {
+        return redirect()->route('request-orders.show', $requestOrder);
+    }
+
+    public function show($id)
+    {
+        $pickingList = PickingList::where('request_order_id', $id)->first();
+        $requestOrder = RequestOrder::with([
+            'items.product.stocks',
+            'items.stock',
+            'requestedBy',
+            'verifiedBy',
+            'additionalNotes',
+            'deliveryOrder.owner',
+            'deliveryOrder.requestOrder.additionalNotes',
+            'deliveryOrder.items.product',
+            'deliveryOrder.items.stock',
+        ])->findOrFail($id);
+        // dd($pickingList);
+
+        if (auth()->user()->role === 'staff-outlet') {
+            return view('request-orders.show', compact('requestOrder'));
+        }
+
+        return view('request-orders.verify', compact('requestOrder', 'pickingList'));
+    }
+
+    public function processVerification(Request $request, RequestOrder $requestOrder)
+    {
+        $request->validate([
+            'items' => 'required|array',
+            'items.*.id' => 'required|exists:request_order_items,id',
+            'items.*.qty_approved' => 'required|integer|min:1',
+            'items.*.item_status' => 'required|in:approved,partial,rejected',
+        ], [
+            'items.required' => 'Item harus diisi.',
+            'items.array' => 'Item harus berupa array.',
+            'items.*.id.required' => 'ID item harus diisi.',
+            'items.*.id.exists' => 'Item permintaan tidak ditemukan.',
+            'items.*.qty_approved.required' => 'Jumlah disetujui harus diisi.',
+            'items.*.qty_approved.integer' => 'Jumlah disetujui harus berupa angka.',
+            'items.*.qty_approved.min' => 'Jumlah disetujui minimal 0.',
+            'items.*.item_status.required' => 'Status item harus diisi.',
+            'items.*.item_status.in' => 'Status item harus dipilih antara approved, partial, atau rejected.',
+        ]);
+
+        // Validate qty_approved against specific SKU stock
+        foreach ($request->items as $itemData) {
+            $item = RequestOrderItem::find($itemData['id']);
+            $stock = $item->stock;
+
+            if (! $stock) {
+                return back()->withErrors([
+                    'items.' . array_search($itemData, $request->items) . '.qty_approved' => "Stock not found for product {$item->product->name}"
+                ])->withInput();
+            }
+
+            // Validate against requested qty
+            if ($itemData['qty_approved'] > $item->qty_requested) {
+                return back()->withErrors([
+                    'items.' . array_search($itemData, $request->items) . '.qty_approved' => "Product {$item->product->name}: Approved qty cannot exceed requested qty ({$item->qty_requested})"
+                ])->withInput();
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            // FIRST: Unreserve all previous reservations
+            foreach ($request->items as $itemData) {
+                $item = RequestOrderItem::find($itemData['id']);
+                $stock = $item->stock;
+
+                if ($item->qty_approved > 0 && $stock) {
+                    $stock->unreserve($item->qty_approved);
+                }
+            }
+
+            // SECOND: Refresh stocks and validate new quantities
+            foreach ($request->items as $itemData) {
+                $item = RequestOrderItem::find($itemData['id']);
+                $stock = $item->stock->fresh(); // Refresh from DB after unreserve
+
+                // Skip validation if rejected
+                if ($itemData['item_status'] === 'rejected') {
+                    continue;
+                }
+
+                // Validate available stock after unreserving
+                if ($itemData['qty_approved'] > 0) {
+                    if ($stock->qty_available < $itemData['qty_approved']) {
+                        // Rollback and show error with current available
+                        DB::rollBack();
+
+                        return back()->withErrors([
+                            'items.' . array_search($itemData, $request->items) . '.qty_approved' => "Product {$item->product->name} (SKU: {$stock->sku}): Only {$stock->qty_available} available after releasing previous reservation. Cannot approve {$itemData['qty_approved']}."
+                        ])->withInput();
+                    }
+                }
+            }
+
+            // THIRD: Update items and reserve new quantities
+            $hasApproved = false;
+            $hasPartial = false;
+            $allRejected = true;
+
+            foreach ($request->items as $itemData) {
+                $item = RequestOrderItem::find($itemData['id']);
+                $stock = $item->stock->fresh();
+
+                // Handle rejected status
+                if ($itemData['item_status'] === 'rejected') {
+                    $item->update([
+                        'qty_approved' => 0,
+                        'item_status' => 'rejected',
+                        'notes' => $itemData['notes'] ?? null,
+                    ]);
+
+                    continue;
+                }
+
+                $item->update([
+                    'qty_approved' => $itemData['qty_approved'],
+                    'item_status' => $itemData['item_status'],
+                    'notes' => $itemData['notes'] ?? null,
+                ]);
+
+                // Reserve new quantity
+                if ($itemData['qty_approved'] > 0) {
+                    $stock->reserve($itemData['qty_approved']);
+                }
+
+                // Determine overall status
+                if ($itemData['item_status'] === 'approved') {
+                    $hasApproved = true;
+                }
+                if ($itemData['item_status'] === 'partial') {
+                    $hasPartial = true;
+                    $hasApproved = true;
+                }
+                if ($itemData['item_status'] !== 'rejected') {
+                    $allRejected = false;
+                }
+            }
+
+            // Update request order status
+            if ($allRejected) {
+                $status = 'rejected';
+            } elseif ($hasPartial) {
+                $status = 'partial';
+            } else {
+                $status = 'approved';
+            }
+
+            $requestOrder->update([
+                'status' => $status,
+                'verified_by' => auth()->id(),
+                'verified_date' => now(),
+                'verification_notes' => $request->verification_notes,
+            ]);
+
+            DB::commit();
+
+            $message = $requestOrder->wasChanged('status')
+                ? 'Request verified successfully'
+                : 'Request verification updated successfully';
+
+            // return redirect()->route('request-orders.verify', $requestOrder)
+            //     ->with('toast_success', $message);
+            return redirect()->route('request-orders.index')
+                ->with('toast_success', $message);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return back()->with('toast_error', $e->getMessage());
+        }
+    }
+
+    public function updateStocks(Request $request, RequestOrder $requestOrder)
+    {
+        $request->validate([
+            'stock_assignments' => 'required|array',
+            'stock_assignments.*.item_id' => 'required|exists:request_order_items,id',
+            'stock_assignments.*.stock_id' => 'required|exists:stocks,id|distinct',
+            'stock_assignments.*.qty' => 'required|integer|min:1',
+        ], [
+            'stock_assignments.required' => 'Penugasan stok harus diisi.',
+            'stock_assignments.array' => 'Penugasan stok harus berupa array.',
+            'stock_assignments.*.item_id.required' => 'ID item harus diisi.',
+            'stock_assignments.*.item_id.exists' => 'Item permintaan tidak ditemukan.',
+            'stock_assignments.*.stock_id.required' => 'Stok harus dipilih.',
+            'stock_assignments.*.stock_id.exists' => 'Stok yang dipilih tidak ditemukan.',
+            'stock_assignments.*.stock_id.distinct' => 'Terdapat stok yang sama (ID :input) dimasukkan lebih dari satu kali.',
+            'stock_assignments.*.qty.required' => 'Jumlah stok harus diisi.',
+            'stock_assignments.*.qty.integer' => 'Jumlah stok harus berupa angka.',
+            'stock_assignments.*.qty.min' => 'Jumlah stok minimal 1.',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Group by item_id
+            $grouped = collect($request->stock_assignments)->groupBy('item_id');
+            $hasPartial = false;
+
+            foreach ($grouped as $itemId => $assignments) {
+                $originalItem = RequestOrderItem::find($itemId);
+                $totalQty = $assignments->sum('qty');
+
+                if ($totalQty > $originalItem->qty_requested) {
+                    throw new \Exception("Product {$originalItem->product->name}: Total assigned qty ({$totalQty}) tidak boleh melebihi qty request ({$originalItem->qty_requested})");
+                }
+
+                // Delete original item (will be replaced by split items)
+                $originalItem->delete();
+
+                // Create new items for each stock assignment
+                foreach ($assignments as $assignment) {
+                    $stock = Stock::find($assignment['stock_id']);
+
+                    if ($stock->qty_available < $assignment['qty']) {
+                        throw new \Exception("Stock {$stock->sku}: Only {$stock->qty_available} available, cannot assign {$assignment['qty']}");
+                    }
+
+                    RequestOrderItem::create([
+                        'request_order_id' => $requestOrder->id,
+                        'product_id' => $originalItem->product_id,
+                        'stock_id' => $assignment['stock_id'],
+                        'qty_requested' => $assignment['qty'],
+                        'qty_approved' => $assignment['qty'],
+                        'item_status' => 'approved',
+                        'notes' => $originalItem->notes,
+                    ]);
+
+                    $stock->reserve($assignment['qty']);
+                }
+
+                if ($totalQty < $originalItem->qty_requested) {
+                    $hasPartial = true;
+
+                    RequestOrderItem::create([
+                        'request_order_id' => $requestOrder->id,
+                        'product_id' => $originalItem->product_id,
+                        'stock_id' => null,
+                        'qty_requested' => $originalItem->qty_requested - $totalQty,
+                        'qty_approved' => 0,
+                        'item_status' => 'rejected',
+                        'notes' => trim(($originalItem->notes ? $originalItem->notes . ' | ' : '') . 'Sisa qty belum teralokasi saat verifikasi otomatis.'),
+                    ]);
+                }
+            }
+
+            $requestOrder->update([
+                'status' => $hasPartial ? 'partial' : 'approved',
+                'verified_by' => auth()->id(),
+                'verified_date' => now(),
+                'verification_notes' => 'Terverifikasi otomatis saat admin memilih SKU/stok.',
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('request-orders.show', $requestOrder)
+                ->with('toast_success', 'Stock assignment berhasil disimpan dan request otomatis terverifikasi.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return back()->with('toast_error', $e->getMessage())->withInput();
+        }
+    }
+
+    public function processView(RequestOrder $requestOrder)
+    {
+        // KUNCI UTAMA: Hanya izinkan masuk jika status RO benar-benar masih 'pending'
+        if ($requestOrder->status !== 'pending') {
+            return redirect()->route('request-orders.index')
+                ->with('toast_error', 'Request Order ini tidak valid untuk diproses atau sudah selesai.');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Lock row RO ini supaya dobel klik / refresh cepat tidak bikin 2 proses jalan barengan
+            $requestOrder = RequestOrder::where('id', $requestOrder->id)->lockForUpdate()->first();
+
+            // 1. Cek apakah draf Picking List untuk RO ini sudah ada
+            $pickingList = PickingList::where('request_order_id', $requestOrder->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$pickingList) {
+                $validItems = $requestOrder->items()->where('qty_requested', '>', 0)->get();
+
+                if ($validItems->isEmpty()) {
+                    DB::rollBack();
+
+                    return redirect()->route('request-orders.index')
+                        ->with('toast_error', 'Request Order ini belum punya item dengan qty valid (semua item qty 0 atau kosong).');
+                }
+
+                // Generate nomor urut kode picking baru (misal: PICK00001)
+                $lastPicking = PickingList::lockForUpdate()->latest('id')->first();
+                $nextNumber  = $lastPicking ? ((int) substr($lastPicking->code, 4) + 1) : 1;
+                $code        = 'PICK' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+
+                // Buat induk picking list dengan status 'in_progress' sesuai ENUM database Anda
+                $pickingList = PickingList::create([
+                    'code'             => $code,
+                    'request_order_id' => $requestOrder->id,
+                    'status'           => 'in_progress',
+                    'picker_id'        => auth()->id(),
+                    'picker_name'      => auth()->user()->name,
+                    'started_at'       => now(),
+                ]);
+
+                $this->generatePickingListItems($pickingList, $validItems);
+
+                // CATATAN: Kode pengubah status $requestOrder->update(['status' => 'processing']) SUDAH DIHAPUS TOTAL.
+                // Status RO Anda di database dijamin akan TETAP BENAR-BENAR 'pending'.
+            } elseif ($pickingList->items()->count() === 0) {
+                // Self-healing: header picking list sudah ada tapi items-nya kosong
+                // (nyangkut dari crash/deploy sebelumnya) -> lengkapi sekarang
+                $validItems = $requestOrder->items()->where('qty_requested', '>', 0)->get();
+
+                if ($validItems->isNotEmpty()) {
+                    $this->generatePickingListItems($pickingList, $validItems);
+
+                    \Log::info('Picking list items berhasil di-generate ulang (self-heal)', [
+                        'picking_list_id' => $pickingList->id,
+                    ]);
+                }
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            \Log::error('Gagal menginisialisasi sesi picking', [
+                'request_order_id' => $requestOrder->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('request-orders.index')
+                ->with('toast_error', 'Gagal menginisialisasi sesi picking: ' . $e->getMessage());
+        }
+
+        // Ambil data item draf picking list beserta relasi produk dan stoknya
+        $pickingList->load(['items.product', 'items.stock']);
+
+        return view('request-orders.process', compact('requestOrder', 'pickingList'));
+    }
+
+    /**
+     * Salin item RequestOrder ke PickingListItem.
+     * Dipakai baik saat pertama kali generate maupun sebagai self-healing.
+     */
+    protected function generatePickingListItems(PickingList $pickingList, $items): void
+    {
+        foreach ($items as $item) {
+            PickingListItem::create([
+                'picking_list_id' => $pickingList->id,
+                'product_id'      => $item->product_id,
+                'stock_id'        => null,
+                'qty_to_pick'     => $item->qty_requested,
+                'qty_picked'      => 0,
+                'location'        => $item->product->lokasi ?? '-',
+                'sku'             => null,
+                'is_picked'       => 0,
+            ]);
+        }
+    }
+
+    /**
+     * Qty yang sudah di-reserve OLEH RO INI per stock (stock_id => qty).
+     * Reservasi dibuat saat verifikasi / admin memilih SKU (Stock::reserve) dan tercatat di
+     * request_order_items (stock_id + qty_approved, status approved/partial). Setelah picking
+     * selesai statusnya menjadi 'picked' sehingga tidak dihitung lagi.
+     */
+    protected function ownReservedByStock(RequestOrder $requestOrder, ?int $productId = null): array
+    {
+        return RequestOrderItem::where('request_order_id', $requestOrder->id)
+            ->when($productId, fn ($q) => $q->where('product_id', $productId))
+            ->whereNotNull('stock_id')
+            ->whereIn('item_status', ['approved', 'partial'])
+            ->where('qty_approved', '>', 0)
+            ->selectRaw('stock_id, SUM(qty_approved) as q')
+            ->groupBy('stock_id')
+            ->pluck('q', 'stock_id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
+    }
+
+    /**
+     * Stock yang bisa dipick untuk RO ini (urut FEFO lalu FIFO), dengan atribut `pick_available`:
+     * qty_available + reservasi milik RO ini sendiri (maksimal sebesar qty_reserved & tidak
+     * melebihi qty fisik). Reservasi RO lain tetap tidak bisa dipakai.
+     */
+    protected function pickableStocks(RequestOrder $requestOrder, int $productId)
+    {
+        $own = $this->ownReservedByStock($requestOrder, $productId);
+
+        return Stock::where('product_id', $productId)
+            ->where('status', 'available')
+            ->where(function ($q) use ($own) {
+                $q->where('qty_available', '>', 0);
+                if (! empty($own)) {
+                    $q->orWhereIn('id', array_keys($own));
+                }
+            })
+            ->orderByRaw('expired_at IS NULL ASC') // Expired_at yang ada nilainya didahulukan
+            ->orderBy('expired_at', 'asc')         // Expired terdekat (FEFO)
+            ->orderBy('id', 'asc')                 // Pembelian terlama (FIFO)
+            ->get()
+            ->each(function ($s) use ($own) {
+                $ownQty = min((int) ($own[$s->id] ?? 0), (int) $s->qty_reserved);
+                $s->pick_available = min((int) $s->qty, (int) $s->qty_available + $ownQty);
+            })
+            ->filter(fn ($s) => $s->pick_available > 0)
+            ->values();
+    }
+
+    public function scanPick(Request $request, RequestOrder $requestOrder)
+    {
+        $request->validate([
+            'barcode' => 'required|string',
+        ]);
+
+        $barcode = trim($request->barcode);
+
+        // 1. Ambil picking list aktif
+        $pickingList = PickingList::where('request_order_id', $requestOrder->id)
+            ->where('status', 'in_progress')
+            ->first();
+
+        if (!$pickingList) {
+            return response()->json(['success' => false, 'message' => 'Sesi picking tidak ditemukan.'], 404);
+        }
+
+        // 2. Cari item yang BELUM di-pick (is_picked = 0) untuk produk dengan barcode tersebut
+        $item = $pickingList->items()
+            ->where('is_picked', 0)
+            ->whereHas('product', fn($q) => $q->where('code', $barcode))
+            ->first();
+
+        if (!$item) {
+            // Cek apakah sebenarnya sudah pernah di-scan semua
+            $alreadyPicked = $pickingList->items()
+                ->where('is_picked', 1)
+                ->whereHas('product', fn($q) => $q->where('code', $barcode))
+                ->first();
+
+            if ($alreadyPicked) {
+                return response()->json([
+                    'success'      => false,
+                    'already'      => true,
+                    'message'      => "Produk '{$alreadyPicked->product->name}' sudah selesai di-pick semuanya.",
+                    'item_id'      => $alreadyPicked->id,
+                    'product_code' => $barcode,
+                ], 200);
+            }
+
+            return response()->json(['success' => false, 'message' => 'Produk tidak terdaftar di RO ini.'], 404);
+        }
+
+        // 3. Ambil SEMUA stock available untuk produk ini, diurutkan berdasarkan FEFO & FIFO
+        // Prioritas 1: Expired terdekat (FEFO)
+        // Prioritas 2: Pembelian/Pembuatan terlama (FIFO / id asc)
+        // Stok yang tersedia UNTUK RO INI = qty_available + reservasi milik RO ini sendiri
+        // (reservasi dari verifikasi/pilih SKU sebelumnya tidak boleh memblokir picking RO yang sama).
+        $availableStocks = $this->pickableStocks($requestOrder, $item->product_id);
+
+        $totalStockAvailable = $availableStocks->sum('pick_available');
+        $qtyNeeded = $item->qty_to_pick; // Contoh: 60 pcs
+
+        if ($totalStockAvailable < $qtyNeeded) {
+            return response()->json([
+                'success' => false,
+                'message' => "Total stok gudang dari seluruh SKU ({$totalStockAvailable} pcs) tidak mencukupi kebutuhan ({$qtyNeeded} pcs)."
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $remainingToPick = $qtyNeeded;
+            $updatedItemsData = []; // Untuk menampung response ke FE
+
+            foreach ($availableStocks as $stock) {
+                if ($remainingToPick <= 0) break;
+
+                // Tentukan berapa jumlah yang bisa diambil dari SKU/Batch ini
+                $take = min($stock->pick_available, $remainingToPick);
+
+                if ($remainingToPick == $qtyNeeded) {
+                    // JIKA INI SKU PERTAMA: Update baris draf asli yang sudah ada di tabel
+                    $item->update([
+                        'stock_id'   => $stock->id,
+                        'sku'        => $stock->sku,
+                        'qty_to_pick' => $take,
+                        'qty_picked' => $take,
+                        'is_picked'  => 1
+                    ]);
+                    $updatedItemsData[] = [
+                        'id'           => $item->id,
+                        'sku'          => $stock->sku,
+                        'qty'          => $take,
+                        'expired_at'   => $stock->expired_at ? \Carbon\Carbon::parse($stock->expired_at)->format('d/m/Y') : '-',
+                        'is_child'     => false,
+                        'product_id'   => $item->product_id,
+                        'product_code' => $item->product->code,
+                        'product_name' => $item->product->name,
+                    ];
+                } else {
+                    // JIKA BUTUH SKU TAMBAHAN (SPLIT ROW): Buat baris baru di picking_list_items
+                    $newItem = PickingListItem::create([
+                        'picking_list_id' => $pickingList->id,
+                        'product_id'      => $item->product_id,
+                        'stock_id'        => $stock->id,
+                        'sku'             => $stock->sku,
+                        'qty_to_pick'     => $take,
+                        'qty_picked'      => $take,
+                        'location'        => $item->location,
+                        'is_picked'       => 1
+                    ]);
+                    $updatedItemsData[] = [
+                        'id'           => $newItem->id,
+                        'sku'          => $stock->sku,
+                        'qty'          => $take,
+                        'expired_at'   => $stock->expired_at ? \Carbon\Carbon::parse($stock->expired_at)->format('d/m/Y') : '-',
+                        'is_child'     => true,
+                        'product_id'   => $item->product_id,
+                        'product_name' => $item->product->name,
+                        'product_code' => $item->product->code
+                    ];
+                }
+
+                $remainingToPick -= $take;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'split'   => true,
+                'items'   => $updatedItemsData,
+                'message' => "Berhasil memecah alokasi menjadi " . count($updatedItemsData) . " SKU sesuai aturan FIFO/FEFO."
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => 'Gagal memproses split SKU: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Update Qty Diminta (qty_to_pick) untuk sebuah produk di picking list.
+     * Selalu bisa diedit selama RO masih 'pending'; terkunci otomatis setelah completeAndShip
+     * karena halaman proses hanya bisa diakses selagi status masih pending.
+     *
+     * Kalau produk BELUM pernah di-scan, cukup update angka qty_to_pick di baris tsb.
+     * Kalau produk SUDAH pernah di-scan (punya alokasi SKU/stock_id), semua baris split
+     * lama untuk produk itu dihapus & dialokasikan ULANG dari awal mengikuti aturan
+     * FEFO/FIFO yang sama seperti scanPick, supaya "Stok Terpilih" selalu sinkron dengan
+     * qty yang baru diinput.
+     */
+    public function updateQtyToPick(Request $request, RequestOrder $requestOrder)
+    {
+        // Guard utama: qty diminta hanya boleh diubah selagi RO masih pending / belum di-complete & ship.
+        if ($requestOrder->status !== 'pending') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request Order ini sudah tidak bisa diubah (sudah diproses/selesai).',
+            ], 422);
+        }
+
+        $pickingList = PickingList::where('request_order_id', $requestOrder->id)
+            ->where('status', 'in_progress')
+            ->first();
+
+        if (!$pickingList) {
+            return response()->json(['success' => false, 'message' => 'Sesi picking tidak ditemukan.'], 404);
+        }
+
+        $validated = $request->validate([
+            'item_id'     => 'required|integer|exists:picking_list_items,id',
+            'qty_to_pick' => 'required|integer|min:0',
+        ], [
+            'qty_to_pick.required' => 'Qty diminta harus diisi.',
+            'qty_to_pick.integer'  => 'Qty diminta harus berupa angka.',
+            'qty_to_pick.min'      => 'Qty diminta tidak boleh kurang dari 0.',
+        ]);
+
+        $item = PickingListItem::with('product')
+            ->where('id', $validated['item_id'])
+            ->where('picking_list_id', $pickingList->id)
+            ->first();
+
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item tidak ditemukan pada sesi picking ini.',
+            ], 404);
+        }
+
+        $product     = $item->product;
+        $newTotalQty = (int) $validated['qty_to_pick'];
+
+        // Helper lokal: hitung tampilan konversi sesuai qty, null kalau produk tidak punya konversi
+        $conversionDisplay = function (int $qty) use ($product) {
+            if ($product && $product->konversi_qty && $product->satuan_besar) {
+                return $product->konversiDisplay($qty);
+            }
+            return null;
+        };
+
+        DB::beginTransaction();
+        try {
+            // Ambil semua baris (termasuk hasil split SKU) untuk produk ini
+            $siblingItems = PickingListItem::where('picking_list_id', $pickingList->id)
+                ->where('product_id', $item->product_id)
+                ->get();
+
+            $wasPicked = $siblingItems->contains(fn($i) => $i->is_picked == 1);
+
+            if (!$wasPicked) {
+                // Belum pernah di-scan -> tinggal update angka qty_to_pick, tidak ada alokasi SKU untuk disesuaikan
+                $item->update(['qty_to_pick' => $newTotalQty]);
+
+                DB::commit();
+
+                return response()->json([
+                    'success'                => true,
+                    'qty_to_pick_total'      => $newTotalQty,
+                    'qty_conversion_display' => $conversionDisplay($newTotalQty),
+                    'is_picked'              => false,
+                    'stock_items'            => [],
+                    'message'                => 'Qty diminta berhasil diperbarui.',
+                ]);
+            }
+
+            // Sudah pernah di-scan -> reset alokasi lama, lalu jalankan ulang FEFO/FIFO untuk qty baru
+            $location = $item->location;
+
+            $siblingItems->where('id', '!=', $item->id)->each(fn($i) => $i->delete());
+
+            $item->update([
+                'qty_to_pick' => 0,
+                'qty_picked'  => 0,
+                'stock_id'    => null,
+                'sku'         => null,
+                'is_picked'   => 0,
+            ]);
+
+            if ($newTotalQty <= 0) {
+                DB::commit();
+
+                return response()->json([
+                    'success'                => true,
+                    'qty_to_pick_total'      => 0,
+                    'qty_conversion_display' => null,
+                    'is_picked'              => false,
+                    'stock_items'            => [],
+                    'message'                => 'Qty diminta diubah menjadi 0, alokasi SKU sebelumnya dibatalkan.',
+                ]);
+            }
+
+            // Termasuk reservasi milik RO ini sendiri (lihat pickableStocks)
+            $availableStocks = $this->pickableStocks($requestOrder, $item->product_id);
+
+            $totalAvailable = $availableStocks->sum('pick_available');
+
+            if ($totalAvailable < $newTotalQty) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => "Total stok gudang dari seluruh SKU ({$totalAvailable} pcs) tidak mencukupi kebutuhan baru ({$newTotalQty} pcs).",
+                ], 422);
+            }
+
+            $remaining = $newTotalQty;
+            $stockItemsData = [];
+            $isFirst = true;
+
+            foreach ($availableStocks as $stock) {
+                if ($remaining <= 0) break;
+
+                $take = min($stock->pick_available, $remaining);
+
+                if ($isFirst) {
+                    $item->update([
+                        'stock_id'    => $stock->id,
+                        'sku'         => $stock->sku,
+                        'qty_to_pick' => $take,
+                        'qty_picked'  => $take,
+                        'is_picked'   => 1,
+                    ]);
+                    $isFirst = false;
+                } else {
+                    PickingListItem::create([
+                        'picking_list_id' => $pickingList->id,
+                        'product_id'      => $item->product_id,
+                        'stock_id'        => $stock->id,
+                        'sku'             => $stock->sku,
+                        'qty_to_pick'     => $take,
+                        'qty_picked'      => $take,
+                        'location'        => $location,
+                        'is_picked'       => 1,
+                    ]);
+                }
+
+                $stockItemsData[] = [
+                    'sku'        => $stock->sku,
+                    'qty'        => $take,
+                    'expired_at' => $stock->expired_at ? \Carbon\Carbon::parse($stock->expired_at)->format('d/m/Y') : '-',
+                ];
+
+                $remaining -= $take;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success'                => true,
+                'qty_to_pick_total'      => $newTotalQty,
+                'qty_conversion_display' => $conversionDisplay($newTotalQty),
+                'is_picked'              => true,
+                'stock_items'            => $stockItemsData,
+                'message'                => 'Qty diminta berhasil diperbarui & alokasi SKU disesuaikan ulang (FEFO/FIFO).',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update qty: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // Complete & Ship: generate PL, complete, update RO
+    public function completeAndShip(Request $request, RequestOrder $requestOrder)
+    {
+        $pickingList = PickingList::where('request_order_id', $requestOrder->id)
+            ->where('status', 'in_progress')
+            ->first();
+
+        if (!$pickingList) {
+            return response()->json(['success' => false, 'message' => 'Sesi proses kirim tidak valid.'], 422);
+        }
+
+        // Hitung jumlah item yang belum sempat di-scan (hanya untuk info di pesan akhir)
+        $unpickedCount = $pickingList->items()->where('is_picked', 0)->count();
+
+        // Reservasi milik RO ini (harus dibaca SEBELUM status item diubah jadi 'picked'/'rejected')
+        $ownReserved = $this->ownReservedByStock($requestOrder);
+
+        DB::beginTransaction();
+        try {
+            // 1. Proses SEMUA item picking list, tapi potong stok HANYA yang sudah di-pick
+            foreach ($pickingList->items as $item) {
+
+                if ($item->is_picked == 1) {
+                    // Item sudah discan → potong stok riil seperti biasa
+                    $stock = Stock::find($item->stock_id);
+                    if ($stock) {
+                        $stock->allocate($item->qty_picked);
+                    }
+
+                    $requestOrder->items()
+                        ->where('product_id', $item->product_id)
+                        ->update([
+                            'stock_id'     => $item->stock_id,
+                            'qty_approved' => $item->qty_picked,
+                            'item_status'  => 'picked',
+                        ]);
+                } else {
+                    // Item belum discan → anggap tidak ready, JANGAN potong stok
+                    $requestOrder->items()
+                        ->where('product_id', $item->product_id)
+                        ->update([
+                            'qty_approved' => 0,
+                            'item_status'  => 'rejected',
+                        ]);
+                }
+            }
+
+            // 1b. Lepas sisa reservasi milik RO ini yang tidak terpakai. allocate() sudah mengurangi
+            // qty_reserved sebesar qty yang dipick; sisanya (mis. SKU yang dicadangkan berbeda dari
+            // SKU hasil FEFO, atau item yang tidak jadi dipick) harus dilepas supaya tidak nyangkut.
+            $pickedByStock = $pickingList->items
+                ->where('is_picked', 1)
+                ->groupBy('stock_id')
+                ->map(fn ($rows) => (int) $rows->sum('qty_picked'));
+
+            foreach ($ownReserved as $stockId => $reservedQty) {
+                $leftover = (int) $reservedQty - (int) ($pickedByStock[$stockId] ?? 0);
+                if ($leftover > 0) {
+                    Stock::find($stockId)?->unreserve($leftover);
+                }
+            }
+
+            // 2. Selesaikan status Picking List menjadi 'completed'
+            $pickingList->update([
+                'status'       => 'completed',
+                'completed_at' => now(),
+            ]);
+
+            // 3. Selesaikan status RO Utama
+            $requestOrder->update([
+                'status'        => 'approved',
+                'verified_by'   => auth()->id(),
+                'verified_date' => now(),
+            ]);
+
+            DB::commit();
+
+            $message = $unpickedCount > 0
+                ? "Proses selesai. {$unpickedCount} item tidak ready dan tidak diproses, sisanya berhasil dipotong stoknya."
+                : 'Seluruh item berhasil diverifikasi dan stok telah resmi dipotong!';
+
+            return response()->json([
+                'success'  => true,
+                'message'  => $message,
+                'redirect' => route('picking-lists.show', $pickingList->id),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan eksekusi data: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function destroy(RequestOrder $requestOrder)
+    {
+        abort_unless($requestOrder->status == 'pending', 403, 'Request ini sudah tidak bisa dihapus.');
+
+        // opsional: hanya pemilik request yang boleh hapus
+        // abort_unless($requestOrder->requested_by === auth()->id(), 403);
+
+        DB::beginTransaction();
+        try {
+            $requestOrder->items()->delete();
+            $requestOrder->additionalNotes()->delete();
+            $requestOrder->delete();
+
+            DB::commit();
+
+            return back()->with('toast_success', 'Request berhasil dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return back()->with('toast_error', $e->getMessage());
+        }
+    }
+}
