@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CustomerController extends Controller
 {
@@ -36,7 +38,50 @@ class CustomerController extends Controller
         return view('customers.create', []);
     }
 
-    public function store(CustomerRequest $request)
+    /**
+     * Tambah customer cepat dari popup kasir (JSON). Hanya Nama yang wajib.
+     * No. Telp / Alamat opsional; kalau No. Telp diisi harus unik supaya
+     * riwayat belanja satu customer tidak terpecah.
+     */
+    protected function storeFromCashier(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'no_telp' => [
+                'nullable', 'string', 'max:50',
+                Rule::unique('users', 'no_telp')->where('role', 'customer')->whereNull('deleted_at'),
+            ],
+            'alamat' => 'nullable|string|max:255',
+        ], [
+            'no_telp.unique' => 'No. Telp sudah terdaftar sebagai customer lain.',
+        ]);
+
+        $noTelp = filled($data['no_telp'] ?? null) ? trim($data['no_telp']) : null;
+
+        $customer = User::create([
+            'name' => trim($data['name']),
+            // Customer tidak login: username hanya pengisi kolom wajib, password acak tak terpakai.
+            'username' => $noTelp ?? 'cust-'.Str::lower(Str::random(8)),
+            'role' => 'customer',
+            'status' => 'active',
+            'alamat' => filled($data['alamat'] ?? null) ? trim($data['alamat']) : null,
+            'no_telp' => $noTelp,
+            'password' => Hash::make(Str::random(40)),
+        ]);
+
+        return response()->json($customer, 201);
+    }
+
+    public function store(Request $request)
+    {
+        if ($request->wantsJson()) {
+            return $this->storeFromCashier($request);
+        }
+
+        return $this->storeFromForm(app(CustomerRequest::class));
+    }
+
+    protected function storeFromForm(CustomerRequest $request)
     {
         $data = $request->validated();
         $data['password'] = Hash::make($data['no_telp']);

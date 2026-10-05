@@ -211,6 +211,16 @@ const Cart = () => {
             });
     };
 
+    // Dipanggil dari popup Customer (F4). Melempar error supaya popup bisa menampilkan pesannya.
+    const createCustomer = async (payload) => {
+        const response = await axios.post("/customer", payload, { headers: { Accept: "application/json" } });
+        const created = response.data;
+        setCustomers((current) => [...current, created]);
+        setCustomerId(String(created.id));
+
+        return created;
+    };
+
     const loadPaymentMethods = () => {
         axios.get("/payment", { headers: { Accept: "application/json" } })
             .then((response) => setPaymentMethods(response.data || []));
@@ -551,6 +561,7 @@ const Cart = () => {
                         customers={customers}
                         customerId={customerId}
                         setCustomerId={setCustomerId}
+                        onCreateCustomer={createCustomer}
                         customerInputRef={customerRef}
                         paidAmount={paidAmount}
                         setPaidAmount={setPaidAmount}

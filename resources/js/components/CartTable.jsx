@@ -31,6 +31,7 @@ const CartTable = ({
     customers,
     customerId,
     setCustomerId,
+    onCreateCustomer,
     customerInputRef,
     paidAmount,
     setPaidAmount,
@@ -77,12 +78,52 @@ const CartTable = ({
 
     // Customer (F4) & Metode Pembayaran (F7) hanya dibuka lewat shortcut keyboard.
     const [customerModalOpen, setCustomerModalOpen] = useState(false);
+    const [newCustomerMode, setNewCustomerMode] = useState(false);
+    const [newCustomer, setNewCustomer] = useState({ name: "", no_telp: "", alamat: "" });
+    const [newCustomerError, setNewCustomerError] = useState("");
+    const [newCustomerSaving, setNewCustomerSaving] = useState(false);
+    const newCustomerNameRef = useRef(null);
     const [paymentModalOpen, setPaymentModalOpen] = useState(false);
     const referenceInputRef = useRef(null);
 
+    const resetNewCustomer = () => {
+        setNewCustomerMode(false);
+        setNewCustomer({ name: "", no_telp: "", alamat: "" });
+        setNewCustomerError("");
+        setNewCustomerSaving(false);
+    };
     const closeCustomerModal = () => {
         setCustomerModalOpen(false);
+        resetNewCustomer();
         onFocusBarcode?.();
+    };
+    const openNewCustomer = () => {
+        setNewCustomerError("");
+        setNewCustomerMode(true);
+        window.setTimeout(() => newCustomerNameRef.current?.focus(), 50);
+    };
+    const submitNewCustomer = async (event) => {
+        event.preventDefault();
+        if (newCustomerSaving) return;
+        if (!newCustomer.name.trim()) {
+            setNewCustomerError("Nama wajib diisi.");
+            return;
+        }
+        setNewCustomerSaving(true);
+        setNewCustomerError("");
+        try {
+            await onCreateCustomer({
+                name: newCustomer.name.trim(),
+                no_telp: newCustomer.no_telp.trim(),
+                alamat: newCustomer.alamat.trim(),
+            });
+            closeCustomerModal();
+        } catch (error) {
+            const errors = error.response?.data?.errors;
+            const first = errors ? Object.values(errors)[0]?.[0] : null;
+            setNewCustomerError(first || error.response?.data?.message || "Gagal menyimpan customer.");
+            setNewCustomerSaving(false);
+        }
     };
     const closePaymentModal = () => {
         setPaymentModalOpen(false);
@@ -92,6 +133,7 @@ const CartTable = ({
     useImperativeHandle(customerInputRef, () => ({
         focus: () => {
             setPaymentModalOpen(false);
+            setNewCustomerMode(false);
             setCustomerModalOpen(true);
         },
     }), []);
@@ -116,6 +158,7 @@ const CartTable = ({
         const closeOnEscape = (event) => {
             if (event.key !== "Escape") return;
             setCustomerModalOpen(false);
+            setNewCustomerMode(false);
             setPaymentModalOpen(false);
         };
         window.addEventListener("keydown", closeOnEscape);
@@ -125,7 +168,7 @@ const CartTable = ({
 
     return (
         <>
-            <div className="table-responsive text-nowrap" style={{ maxHeight: "45vh", overflowY: "auto", border: "1px solid #ddd" }}>
+            <div className="table-responsive text-nowrap" style={{ minHeight: "40vh", maxHeight: "calc(100vh - 420px)", overflowY: "auto", border: "1px solid #ddd" }}>
                 <table className="table table-sm table-bordered">
                     <thead style={{ position: "sticky", top: 0, zIndex: 1, background: "#fff" }}>
                         <tr>
@@ -151,37 +194,30 @@ const CartTable = ({
                     </tbody>
                 </table>
             </div>
-            <div className="table-responsive text-nowrap" style={{ marginTop: 0 }}>
-                <table className="table table-sm table-bordered" style={{ marginBottom: 0 }}>
-                    <tbody>
-                        <tr>
-                            <td colSpan="4">Subtotal setelah Disc Toko</td>
-                            <td className="text-right">{formatRupiah(getBaseSubtotal(cart))}</td>
-                        </tr>
-                        {promotionTotal > 0 && <tr>
-                            <td colSpan="4">Potongan promo rafaksi / bundling</td>
-                            <td className="text-right text-danger">-{formatRupiah(promotionTotal)}</td>
-                        </tr>}
-                        <tr>
-                            <td colSpan="4">Subtotal setelah promo</td>
-                            <td className="text-right">{formatRupiah(getSubtotal(cart))}</td>
-                        </tr>
-                        {voucherBreakdown.map((voucher) => (
-                            <tr key={voucher.code}>
-                                <td colSpan="4">Voucher {voucher.code}</td>
-                                <td className="text-right text-danger">-{formatRupiah(voucher.amount)}</td>
-                            </tr>
-                        ))}
-                        <tr>
-                            <td colSpan="4">Total Voucher</td>
-                            <td className="text-right text-danger">-{formatRupiah(voucherTotal)}</td>
-                        </tr>
-                        <tr>
-                            <th colSpan="4">Grand Total</th>
-                            <th className="text-right">{formatRupiah(grandTotal)}</th>
-                        </tr>
-                    </tbody>
-                </table>
+            <div
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "6px 10px",
+                    border: "1px solid #ddd",
+                    borderTop: 0,
+                    background: "#f9f9f9",
+                }}
+            >
+                <div className="small text-muted" style={{ display: "flex", flexWrap: "wrap", columnGap: 14, rowGap: 0, lineHeight: 1.5 }}>
+                    <span>Subtotal: <b>{formatRupiah(getBaseSubtotal(cart))}</b></span>
+                    {promotionTotal > 0 && <span>Promo: <b className="text-danger">-{formatRupiah(promotionTotal)}</b></span>}
+                    {voucherBreakdown.map((voucher) => (
+                        <span key={voucher.code}>Voucher {voucher.code}: <b className="text-danger">-{formatRupiah(voucher.amount)}</b></span>
+                    ))}
+                    {voucherTotal > 0 && voucherBreakdown.length > 1 && <span>Total Voucher: <b className="text-danger">-{formatRupiah(voucherTotal)}</b></span>}
+                </div>
+                <div style={{ whiteSpace: "nowrap", fontSize: 20, fontWeight: 700 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>Grand Total</span>
+                    {formatRupiah(grandTotal)}
+                </div>
             </div>
             <Vouchers
                 appliedVouchers={appliedVouchers}
@@ -254,24 +290,77 @@ const CartTable = ({
                             <h3 className="box-title"><i className="fa fa-user"></i> Customer <small>(F4)</small></h3>
                         </div>
                         <div className="box-body">
-                            <ReactSelectField
-                                value={customerId}
-                                onChange={(value) => {
-                                    setCustomerId(value);
-                                    closeCustomerModal();
-                                }}
-                                placeholder="Pilih customer"
-                                isClearable={false}
-                                autoFocus
-                                defaultMenuIsOpen
-                                options={[
-                                    { value: "", label: "Umum" },
-                                    ...customers.map((customer) => ({
-                                        value: customer.id,
-                                        label: `${customer.name}${customer.no_telp ? ` — ${customer.no_telp}` : ""}`,
-                                    })),
-                                ]}
-                            />
+                            {!newCustomerMode ? (
+                                <>
+                                    <button type="button" className="btn btn-default btn-block" style={{ marginBottom: 10 }} onClick={openNewCustomer}>
+                                        <i className="fa fa-plus"></i> Tambah Customer Baru
+                                    </button>
+                                    <ReactSelectField
+                                        value={customerId}
+                                        onChange={(value) => {
+                                            setCustomerId(value);
+                                            closeCustomerModal();
+                                        }}
+                                        placeholder="Pilih customer"
+                                        isClearable={false}
+                                        autoFocus
+                                        defaultMenuIsOpen
+                                        options={[
+                                            { value: "", label: "Umum" },
+                                            ...customers.map((customer) => ({
+                                                value: customer.id,
+                                                label: `${customer.name}${customer.no_telp ? ` — ${customer.no_telp}` : ""}`,
+                                            })),
+                                        ]}
+                                    />
+                                </>
+                            ) : (
+                                <form onSubmit={submitNewCustomer}>
+                                    <div className="form-group">
+                                        <label>Nama <span className="text-danger">*</span></label>
+                                        <input
+                                            ref={newCustomerNameRef}
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Nama customer"
+                                            value={newCustomer.name}
+                                            onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>No. Telp <small className="text-muted">(opsional)</small></label>
+                                        <input
+                                            type="text"
+                                            inputMode="tel"
+                                            className="form-control"
+                                            placeholder="08xxxxxxxxxx"
+                                            value={newCustomer.no_telp}
+                                            onChange={(event) => setNewCustomer({ ...newCustomer, no_telp: event.target.value })}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Alamat <small className="text-muted">(opsional)</small></label>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Alamat customer"
+                                            value={newCustomer.alamat}
+                                            onChange={(event) => setNewCustomer({ ...newCustomer, alamat: event.target.value })}
+                                        />
+                                    </div>
+                                    {newCustomerError && <div className="alert alert-danger" style={{ padding: "6px 10px" }}>{newCustomerError}</div>}
+                                    <div className="row">
+                                        <div className="col-xs-5">
+                                            <button type="button" className="btn btn-default btn-block" onClick={resetNewCustomer} disabled={newCustomerSaving}>Kembali</button>
+                                        </div>
+                                        <div className="col-xs-7">
+                                            <button type="submit" className="btn btn-primary btn-block" disabled={newCustomerSaving}>
+                                                {newCustomerSaving ? "Menyimpan..." : "Simpan & Pilih"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            )}
                         </div>
                     </div>
                 </div>
