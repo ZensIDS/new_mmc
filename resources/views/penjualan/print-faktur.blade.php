@@ -50,7 +50,7 @@
         @page { size: 24.13cm 27.94cm; margin: 0; }
         :root {
             --geser-kiri: 1cm;   /* KALIBRASI: besarkan kalau huruf kiri masih terpotong / isi kurang ke kanan */
-            --geser-atas: 0.4cm; /* besarkan kalau isi mau turun, kecilkan kalau mau naik */
+            --geser-atas: 1cm;   /* besarkan kalau isi mau turun, kecilkan kalau mau naik */
             --lebar-isi: 17.8cm; /* kecilkan kalau kanan terpotong, besarkan kalau terlalu jauh dari kanan */
         }
         * { box-sizing: border-box; }
@@ -135,7 +135,7 @@
             @if ($penjualan->outlet?->desc)<div class="small">{{ $penjualan->outlet->desc }}</div>@endif
         </div>
         <div class="col-right">
-            <div class="doc-title">FAKTUR PENJUALAN</div>
+            <div class="doc-title">NOTA PENJUALAN</div>
             <table class="meta">
                 <tr><td>No. Faktur</td><td>:</td><td>{{ $penjualan->code }}</td></tr>
                 <tr><td>Tanggal</td><td>:</td><td>{{ optional($penjualan->created_at)->format('d/m/Y H:i') }}</td></tr>
