@@ -3,6 +3,8 @@
 namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Session\TokenMismatchException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -46,5 +48,28 @@ class Handler extends ExceptionHandler
         $this->reportable(function (Throwable $e) {
             //
         });
+
+        // Page Expired (419) -> langsung arahkan ke login, tanpa halaman error
+        $this->renderable(function (TokenMismatchException $e, $request) {
+            return $this->redirectToLoginOnExpired($request);
+        });
+
+        $this->renderable(function (HttpException $e, $request) {
+            if ($e->getStatusCode() === 419) {
+                return $this->redirectToLoginOnExpired($request);
+            }
+        });
+    }
+
+    protected function redirectToLoginOnExpired($request)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message'  => 'Sesi berakhir, silakan login kembali.',
+                'redirect' => route('login'),
+            ], 401);
+        }
+
+        return redirect()->route('login');
     }
 }
