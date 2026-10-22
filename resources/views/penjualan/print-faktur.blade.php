@@ -131,6 +131,7 @@
         <div class="col-left">
             <img class="store-logo" src="{{ asset('img/logo.png') }}" alt="{{ $penjualan->outlet?->name ?? 'LUWES' }}">
             <div class="store-name">{{ $penjualan->outlet?->name ?? 'LUWES' }}</div>
+            <div class="small">CV Kirana Artha Persada</div>
             @if ($penjualan->outlet?->alamat)<div class="small">{{ $penjualan->outlet->alamat }}</div>@endif
             @if ($penjualan->outlet?->desc)<div class="small">{{ $penjualan->outlet->desc }}</div>@endif
         </div>
