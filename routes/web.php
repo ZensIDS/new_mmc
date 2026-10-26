@@ -334,12 +334,17 @@ Route::middleware(['role:superadmin'])->group(function () {
 require __DIR__ . '/auth.php';
 
 //* Artisan Commands
-Route::get('/optimize-clear', function () {
-    Artisan::call('optimize:clear');
-    return redirect('/login')->with(['success' => 'Optimization Berhasil']);
-});
+// Hanya superadmin yang sudah login. Sebelumnya terbuka tanpa login (tidak aman di produksi).
+Route::middleware(['auth', 'role:superadmin'])->group(function () {
+    Route::get('/optimize-clear', function () {
+        Artisan::call('optimize:clear');
 
-Route::get('/storage-link', function () {
-    Artisan::call('storage:link');
-    return redirect('/login')->with(['success' => 'Optimization Berhasil']);
+        return redirect()->route('dashboard')->with('toast_success', 'Optimization berhasil');
+    })->name('artisan.optimize-clear');
+
+    Route::get('/storage-link', function () {
+        Artisan::call('storage:link');
+
+        return redirect()->route('dashboard')->with('toast_success', 'Storage link berhasil');
+    })->name('artisan.storage-link');
 });

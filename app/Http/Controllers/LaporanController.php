@@ -50,6 +50,7 @@ use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\OutletLaporanService;
+use App\Support\LaporanCatalog;
 use App\Support\OutletAccess;
 use App\Support\ReportQuery;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -62,6 +63,7 @@ class LaporanController extends Controller
     public function index()
     {
         return view('laporan.index', [
+            'groups' => LaporanCatalog::groups('gudang'),
             'cashiers' => User::where('role', 'staff-outlet')->get(),
             'outlets' => Outlet::get(),
             'suppliers' => Supplier::get(),
@@ -71,6 +73,7 @@ class LaporanController extends Controller
     public function indexOutlet()
     {
         return view('laporan.outlet', [
+            'groups' => LaporanCatalog::groups('outlet'),
             'cashiers' => User::whereIn('role', ['staff-outlet', 'kasir'])->orderBy('name')->get(),
             'outlets' => OutletAccess::outlets(),
             'rafaksis' => \App\Models\Promotion::query()->orderByDesc('start_at')->orderBy('name')->get(),
@@ -221,7 +224,9 @@ class LaporanController extends Controller
 
     public function exportStock()
     {
-        return Excel::download(new StockExport, 'laporan-stock.xlsx');
+        $export = new StockExport;
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPengeluaran()
@@ -236,27 +241,37 @@ class LaporanController extends Controller
 
     public function exportOutletMinimalStock(Request $request)
     {
-        return Excel::download(new OutletMinimalStockExport($request), 'laporan-outlet-minimal-stock.xlsx');
+        $export = new OutletMinimalStockExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportOutletPenjualan(Request $request)
     {
-        return Excel::download(new OutletPenjualanExport($request), 'laporan-outlet-penjualan.xlsx');
+        $export = new OutletPenjualanExport($request);
+
+        return Excel::download($export, $export->fileName());
     }
 
     public function exportOutletRafaksi(Request $request)
     {
-        return Excel::download(new OutletRafaksiExport($request), 'laporan-outlet-rafaksi.xlsx');
+        $export = new OutletRafaksiExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportOutletRetur(Request $request)
     {
-        return Excel::download(new OutletReturExport($request), 'laporan-outlet-retur.xlsx');
+        $export = new OutletReturExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportOutletAllStock(Request $request)
     {
-        return Excel::download(new OutletAllStockExport($request), 'laporan-outlet-all-stock.xlsx');
+        $export = new OutletAllStockExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportReturSupplier(Request $request)
@@ -264,10 +279,9 @@ class LaporanController extends Controller
         $settings = $this->getSettings();
         [$mulai, $selesai] = $this->dateRange($request);
 
-        return Excel::download(
-            new ReturSupplierExport($mulai, $selesai, $settings),
-            'laporan-retur-supplier.xlsx'
-        );
+        $export = new ReturSupplierExport($mulai, $selesai, $settings);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportReturOutlet(Request $request)
@@ -275,10 +289,9 @@ class LaporanController extends Controller
         $settings = $this->getSettings();
         [$mulai, $selesai] = $this->dateRange($request);
 
-        return Excel::download(
-            new ReturOutletExport($mulai, $selesai, $settings),
-            'laporan-retur-outlet.xlsx'
-        );
+        $export = new ReturOutletExport($mulai, $selesai, $settings);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportReturPembelianSingle(RefundPembelian $refundPembelian)
@@ -811,52 +824,72 @@ class LaporanController extends Controller
 
     public function exportLaporanPO(Request $request)
     {
-        return Excel::download(new LaporanPOExport($request), 'laporan-po.xlsx');
+        $export = new LaporanPOExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPR(Request $request)
     {
-        return Excel::download(new LaporanPRExport($request), 'laporan-pr.xlsx');
+        $export = new LaporanPRExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportBarangMasuk(Request $request)
     {
-        return Excel::download(new LaporanBarangMasukExport($request), 'laporan-barang-masuk.xlsx');
+        $export = new LaporanBarangMasukExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportBarangKeluar(Request $request)
     {
-        return Excel::download(new LaporanBarangKeluarExport($request), 'laporan-barang-keluar.xlsx');
+        $export = new LaporanBarangKeluarExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPenerimaanBarang(Request $request)
     {
-        return Excel::download(new LaporanPenerimaanBarangExport($request), 'laporan-penerimaan-barang.xlsx');
+        $export = new LaporanPenerimaanBarangExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPengiriman(Request $request)
     {
-        return Excel::download(new LaporanPengirimanExport($request), 'laporan-pengiriman.xlsx');
+        $export = new LaporanPengirimanExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPickingPacking(Request $request)
     {
-        return Excel::download(new LaporanPickingPackingExport($request), 'laporan-picking-packing.xlsx');
+        $export = new LaporanPickingPackingExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportAktifitas(Request $request)
     {
-        return Excel::download(new LaporanAktifitasExport($request), 'laporan-aktifitas-gudang.xlsx');
+        $export = new LaporanAktifitasExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPembelianBarang(Request $request)
     {
-        return Excel::download(new LaporanPembelianBarangExport($request), 'laporan-pembelian-barang.xlsx');
+        $export = new LaporanPembelianBarangExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function exportPergerakan(Request $request)
     {
-        return Excel::download(new LaporanPergerakanExport($request), 'laporan-pergerakan-stok.xlsx');
+        $export = new LaporanPergerakanExport($request);
+
+        return Excel::download($export, $export->downloadName());
     }
 
     public function pdfOutletMinimalStock(Request $request)

@@ -2,50 +2,43 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\Pembelian;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanPembelianBarangExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPembelianBarangExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Pembelian-Barang';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Pembelian Barang';
     }
 
-    public function headings(): array
+    protected function columns(): array
     {
         return [
-            'No',
-            'Tanggal',
-            'Kode PO',
-            'Supplier',
-            'Kode Barang',
-            'Nama Barang',
-            'Qty',
-            'Satuan',
-            'Harga Satuan',
-            'Total Harga',
-            'Status',
-            'Keterangan'
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('Kode PO', 'code', 20),
+            self::col('Supplier', 'text', 24),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Qty', 'qty', 9),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Harga Satuan', 'money', 16),
+            self::col('Total Harga', 'money', 16, ['sum' => true]),
+            self::col('Status', 'center', 14),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
-        $mulai   = $this->request->input('tanggal_mulai');
+        $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
 
         $pembelians = Pembelian::with(['supplier', 'pembelianProducts.product'])
@@ -54,29 +47,23 @@ class LaporanPembelianBarangExport implements FromCollection, WithHeadings, With
             ->orderBy('created_at')
             ->get();
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($pembelians as $p) {
             foreach ($p->pembelianProducts as $pp) {
-                $k = $pp->product?->konversiDisplay($pp->qty ?? 0);
-                $rows->push([
-                    $no++,
-                    Carbon::parse($p->created_at)->format('d M Y'),
+                yield [
+                    $p->created_at,
                     $p->code,
                     $p->supplier?->name ?? '-',
                     $pp->product?->code ?? '-',
                     $pp->product?->name ?? '-',
-                    ($pp->qty ?? 0).($k && $k !== '-' ? " ({$k})" : ''),
+                    $pp->qty ?? 0,
+                    $this->konversi($pp->product, $pp->qty ?? 0),
                     $pp->product?->satuan ?? 'PCS',
                     $pp->harga_beli,
                     $pp->subtotal,
                     ucfirst($p->status ?? '-'),
-                    '',
-                ]);
+                    null,
+                ];
             }
         }
-
-        return $rows;
     }
 }

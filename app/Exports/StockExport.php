@@ -2,50 +2,68 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\BaseReportExport;
+use App\Exports\Support\ReportHelpers;
+use App\Models\ProductMinimumAdjustment;
 use App\Models\Stock;
 use Carbon\Carbon;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class StockExport implements FromCollection, WithHeadings, WithTitle
+/**
+ * Laporan Stok Gudang (satu baris per batch).
+ *
+ * Pemakaian di controller:
+ *   $export = new StockExport;
+ *   return Excel::download($export, $export->downloadName());
+ */
+class StockExport extends BaseReportExport
 {
-    use Exportable;
+    use ReportHelpers;
 
-    public function title(): string
+    public function downloadName(): string
+    {
+        return self::fileName('Stok-Gudang');
+    }
+
+    protected function reportTitle(): string
     {
         return 'Laporan Stok Barang';
     }
 
-    public function headings(): array
+    protected function periodText(): ?string
+    {
+        return 'Posisi per '.now()->format('d/m/Y H:i');
+    }
+
+    protected function columns(): array
     {
         return [
-            'No',
-            'Kode Barang',
-            'Nama Barang',
-            'Batch',
-            'Expired Date',
-            'Kategori',
-            'Satuan',
-            'Stok Batch',
-            'Total Stok Produk',
-            'Min Stok',
-            'Selisih',
-            'Status Stok',
-            'Status Expired',
-            'Lokasi',
+            self::col('No', 'no'),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Batch', 'code', 18),
+            self::col('Expired Date', 'date'),
+            self::col('Kategori', 'text', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Stok Batch', 'qty', 11),
+            self::col('Konversi Batch', 'center', 18),
+            self::col('Total Stok Produk', 'qty', 13),
+            self::col('Konversi Total', 'center', 18),
+            self::col('Min Stok', 'int', 10),
+            self::col('Selisih', 'int', 10),
+            self::col('Status Stok', 'center', 13),
+            self::col('Status Expired', 'center', 15),
+            self::col('Lokasi', 'center', 12),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
         $stocks = Stock::with(['product.category', 'pembelian'])
             ->orderBy('product_id')
             ->get();
 
-        $today = now()->toDateString();
-        $activeAdjs = \App\Models\ProductMinimumAdjustment::activeOn($today)
+        $activeAdjs = ProductMinimumAdjustment::activeOn(now()->toDateString())
             ->orderByDesc('active_from')
             ->orderByDesc('id')
             ->get()
@@ -57,9 +75,6 @@ class StockExport implements FromCollection, WithHeadings, WithTitle
             ->groupBy('product_id')
             ->pluck('total_qty', 'product_id');
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($stocks as $s) {
             $baseMin = $s->product?->min_stock ?? 0;
             $adj = $activeAdjs->get($s->product_id);
@@ -67,32 +82,43 @@ class StockExport implements FromCollection, WithHeadings, WithTitle
                 ? (int) ceil($baseMin * (1 + $adj->adjustment_percentage / 100))
                 : (int) $baseMin;
             $totalQty = (int) ($productTotals[$s->product_id] ?? 0);
-            $selisih = $totalQty - $minStok;
             $statusStok = $totalQty > $minStok ? 'Aman' : ($totalQty > 0 ? 'Kritis' : 'Habis');
-            $statusExp = $s->expired_at && Carbon::parse($s->expired_at)->isPast() ? 'Expired' : 'Belum Expired';
+            $statusExp = $s->expired_at ? (Carbon::parse($s->expired_at)->isPast() ? 'Expired' : 'Belum Expired') : '-';
+            $qty = $s->qty ?? 0;
 
-            $qty         = $s->qty ?? 0;
-            $konvDisplay = $s->product?->konversiDisplay($qty) ?? '-';
-            $konvTotal   = $s->product?->konversiDisplay($totalQty) ?? '-';
-
-            $rows->push([
-                $no++,
+            yield [
                 $s->product?->code ?? '-',
                 $s->product?->name ?? '-',
                 $s->sku ?? '-',
-                $s->expired_at ? Carbon::parse($s->expired_at)->format('d/m/Y') : '-',
+                $s->expired_at,
                 $s->product?->category?->name ?? '-',
                 $s->product?->satuan ?? 'PCS',
-                $qty.($konvDisplay && $konvDisplay !== '-' ? " ({$konvDisplay})" : ''),
-                $totalQty.($konvTotal && $konvTotal !== '-' ? " ({$konvTotal})" : ''),
+                $qty,
+                $this->konversi($s->product, $qty),
+                $totalQty,
+                $this->konversi($s->product, $totalQty),
                 $minStok,
-                ($selisih >= 0 ? '+' : '').$selisih,
+                $totalQty - $minStok,
                 $statusStok,
-                $s->expired_at ? $statusExp : '-',
+                $statusExp,
                 $s->location ?? '-',
-            ]);
+            ];
         }
+    }
 
-        return $rows;
+    protected function decorateData(Worksheet $sheet, array $columns, array $data, int $first, int $lastData, string $last): void
+    {
+        parent::decorateData($sheet, $columns, $data, $first, $lastData, $last);
+
+        $this->colorByHeader($sheet, 'Status Stok', $first, $lastData, [
+            'Aman' => 'FF00803C', 'Kritis' => 'FFC55A11', 'Habis' => 'FFC00000',
+        ]);
+        $this->colorByHeader($sheet, 'Status Expired', $first, $lastData, ['Expired' => 'FFC00000']);
+    }
+
+    protected function numberFormat(array $column, int $index): string
+    {
+        // Selisih tampil dengan tanda +/-.
+        return $column['header'] === 'Selisih' ? '+#,##0;-#,##0;0' : parent::numberFormat($column, $index);
     }
 }

@@ -2,50 +2,43 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\DeliveryOrder;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanPengirimanExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPengirimanExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Pengiriman-Barang';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Pengiriman Barang';
     }
 
-    public function headings(): array
+    protected function columns(): array
     {
         return [
-            'No',
-            'Tanggal',
-            'No Surat Jalan',
-            'No Dokumen',
-            'Tujuan',
-            'Kode Barang',
-            'Nama Barang',
-            'Batch',
-            'Qty',
-            'Satuan',
-            'Status',
-            'Keterangan'
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('No Surat Jalan', 'code', 20),
+            self::col('No Dokumen', 'code', 20),
+            self::col('Tujuan', 'text', 22),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Batch', 'code', 18),
+            self::col('Qty', 'qty', 9),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Status', 'center', 14),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
-        $mulai   = $this->request->input('tanggal_mulai');
+        $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
 
         $deliveries = DeliveryOrder::with(['owner', 'requestOrder', 'items.product'])
@@ -54,30 +47,23 @@ class LaporanPengirimanExport implements FromCollection, WithHeadings, WithTitle
             ->orderBy('delivery_date')
             ->get();
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($deliveries as $do) {
             foreach ($do->items as $item) {
-                $k = $item->product?->konversiDisplay($item->qty) ?? '-';
-
-                $rows->push([
-                    $no++,
-                    Carbon::parse($do->delivery_date)->format('d M Y'),
+                yield [
+                    $do->delivery_date,
                     $do->code,
                     $do->requestOrder?->code ?? '-',
                     $do->owner?->name ?? '-',
                     $item->product?->code ?? '-',
                     $item->product?->name ?? '-',
                     $item->sku ?? '-',
-                    $item->qty.($k && $k !== '-' ? " ({$k})" : ''),
+                    $item->qty,
+                    $this->konversi($item->product, $item->qty),
                     $item->product?->satuan ?? 'PCS',
                     ucfirst($do->status ?? '-'),
-                    '',
-                ]);
+                    null,
+                ];
             }
         }
-
-        return $rows;
     }
 }

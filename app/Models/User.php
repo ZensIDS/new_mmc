@@ -69,6 +69,60 @@ class User extends Authenticatable
         return $this->hasMany(Penjualan::class, 'customer_id');
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Helper role (daftar role ada di config/roles.php)
+    |--------------------------------------------------------------------------
+    */
+
+    /** Cek apakah role user termasuk salah satu role yang diberikan. */
+    public function hasRole(string|array ...$roles): bool
+    {
+        $roles = collect($roles)->flatten()->all();
+
+        return in_array($this->role, $roles, true);
+    }
+
+    public function isSuperadmin(): bool
+    {
+        return $this->role === 'superadmin';
+    }
+
+    /** Admin Pusat (berbeda dengan `admin-gudang`). */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    /** Akses penuh: superadmin dan admin. */
+    public function hasFullAccess(): bool
+    {
+        return $this->hasRole(config('roles.full_access', ['superadmin', 'admin']));
+    }
+
+    /** Boleh hapus langsung tanpa persetujuan. */
+    public function canDeleteDirectly(): bool
+    {
+        return $this->hasRole(config('roles.delete_direct', ['superadmin']));
+    }
+
+    /** Boleh menyetujui/menolak permintaan hapus. */
+    public function canApproveDeletion(): bool
+    {
+        return $this->hasRole(config('roles.delete_approver', ['superadmin']));
+    }
+
+    /** Admin yang hapusnya harus menunggu persetujuan superadmin. */
+    public function mustRequestDeletion(): bool
+    {
+        return $this->isAdmin();
+    }
+
+    public function roleLabel(): string
+    {
+        return config('roles.labels.'.$this->role, ucfirst((string) $this->role));
+    }
+
     public function isDefaultCustomer(): bool
     {
         return $this->role === 'customer' && $this->username === self::DEFAULT_CUSTOMER_USERNAME;

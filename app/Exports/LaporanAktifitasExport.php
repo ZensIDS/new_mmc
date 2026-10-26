@@ -2,51 +2,44 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\StockMovement;
-use Carbon\Carbon;
 use App\Support\ReportQuery;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanAktifitasExport implements FromCollection, WithHeadings, WithTitle
+class LaporanAktifitasExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Aktivitas-Gudang';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Aktivitas Gudang';
     }
 
-    public function headings(): array
+    protected function columns(): array
     {
         return [
-            'No',
-            'Tanggal',
-            'Jenis Aktivitas',
-            'No Dokumen',
-            'Kode Barang',
-            'Nama Barang',
-            'Qty',
-            'Satuan',
-            'Lokasi',
-            'PIC',
-            'Status',
-            'Keterangan'
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('Jenis Aktivitas', 'center', 16),
+            self::col('No Dokumen', 'code', 20),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Qty', 'qty', 9),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Lokasi', 'center', 12),
+            self::col('PIC', 'text', 20),
+            self::col('Status', 'center', 16),
+            self::col('Keterangan', 'text', 30, ['wrap' => true]),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
-        $mulai   = $this->request->input('tanggal_mulai');
+        $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
 
         // product.suppliers di-eager-load (sebelumnya lazy-load per baris)
@@ -57,44 +50,23 @@ class LaporanAktifitasExport implements FromCollection, WithHeadings, WithTitle
 
         $refs = ReportQuery::resolveReferences($movements);
 
-        $movements = $movements
-            ->map(function ($m) use ($refs) {
-                $docCode = ReportQuery::ref($refs, $m)?->code ?? '-';
-                $jenis = $m->qty_in > 0 ? 'Penerimaan' : 'Pengiriman';
-                $qty   = max($m->qty_in ?? 0, $m->qty_out ?? 0);
-
-                return (object) [
-                    'created_at' => $m->created_at,
-                    'jenis'      => $jenis,
-                    'doc_code'   => $docCode,
-                    'product'    => $m->product,
-                    'qty'        => $qty,
-                    'type'      => $m->type,
-                    'notes'      => $m->notes,
-                ];
-            });
-
-        $rows = collect();
-        $no = 1;
-
         foreach ($movements as $m) {
-            $k = $m->product?->konversiDisplay($m->qty ?? 0);
-            $rows->push([
-                $no++,
-                Carbon::parse($m->created_at)->format('d M Y'),
-                $m->jenis,
-                $m->doc_code,
+            $qty = max($m->qty_in ?? 0, $m->qty_out ?? 0);
+
+            yield [
+                $m->created_at,
+                $m->qty_in > 0 ? 'Penerimaan' : 'Pengiriman',
+                ReportQuery::ref($refs, $m)?->code ?? '-',
                 $m->product?->code ?? '-',
                 $m->product?->name ?? '-',
-                ($m->qty ?? 0).($k && $k !== '-' ? " ({$k})" : ''),
+                $qty,
+                $this->konversi($m->product, $qty),
                 $m->product?->satuan ?? 'PCS',
                 $m->product?->lokasi,
                 optional($m->product?->suppliers)->pluck('pic_supplier')?->filter()->implode(', '),
                 $m->type,
                 $m->notes ?? '',
-            ]);
+            ];
         }
-
-        return $rows;
     }
 }

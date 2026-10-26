@@ -2,64 +2,73 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\Pembelian;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanPOExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPOExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'PO';
     }
-    public function title(): string
+
+    protected function reportTitle(): string
     {
         return 'Laporan PO';
     }
-    public function headings(): array
+
+    protected function columns(): array
     {
-        return ['No', 'Tanggal PO', 'Kode PO', 'No PR', 'Supplier', 'Kode Barang', 'Nama Barang', 'QTY', 'Satuan', 'Harga Total', 'QTY Diterima', 'Status', 'Keterangan'];
+        return [
+            self::col('No', 'no'),
+            self::col('Tanggal PO', 'date'),
+            self::col('Kode PO', 'code', 20),
+            self::col('No PR', 'code', 20),
+            self::col('Supplier', 'text', 24),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('QTY', 'qty', 9),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Harga Total', 'money', 16, ['sum' => true]),
+            self::col('QTY Diterima', 'qty', 12),
+            self::col('Konversi Diterima', 'center', 18),
+            self::col('Status', 'center', 14),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
+        ];
     }
-    public function collection()
+
+    protected function rows(): iterable
     {
         $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
+
         $pembelians = Pembelian::with(['supplier', 'pembelianProducts.product'])
             ->when($mulai, fn ($q) => $q->whereDate('created_at', '>=', $mulai))
             ->when($selesai, fn ($q) => $q->whereDate('created_at', '<=', $selesai))
             ->orderBy('created_at')->get();
-        $rows = collect();
-        $no = 1;
+
         foreach ($pembelians as $p) {
             foreach ($p->pembelianProducts as $pp) {
-                $kQty = $pp->product?->konversiDisplay($pp->qty) ?? '-';
                 $qtyRcv = $pp->qty_received ?? $pp->qty;
-                $kRcv = $pp->product?->konversiDisplay($qtyRcv) ?? '-';
 
-                $rows->push([
-                    $no++,
-                    Carbon::parse($p->created_at)->format('d M Y'),
+                yield [
+                    $p->created_at,
                     $p->code,
                     $p->requestOrder?->code ?? '-',
                     $p->supplier?->name ?? '-',
                     $pp->product?->code ?? '-',
                     $pp->product?->name ?? '-',
-                    $pp->qty.($kQty && $kQty !== '-' ? " ({$kQty})" : ''),
+                    $pp->qty,
+                    $this->konversi($pp->product, $pp->qty),
                     $pp->product?->satuan ?? 'PCS',
                     $pp->subtotal,
-                    $qtyRcv.($kRcv && $kRcv !== '-' ? " ({$kRcv})" : ''),
+                    $qtyRcv,
+                    $this->konversi($pp->product, $qtyRcv),
                     ucfirst($p->status ?? '-'),
-                    ''
-                ]);
+                    null,
+                ];
             }
         }
-
-        return $rows;
     }
 }

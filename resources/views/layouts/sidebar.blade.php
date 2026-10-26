@@ -220,10 +220,28 @@
         </li>
         @endif
 
-        {{-- Laporan --}}
-        @if (in_array($role, ['superadmin', 'admin-gudang', 'staff-outlet', 'owner']))
-        <li class="{{ in_array(Route::currentRouteName(), ['laporan.index', 'laporan.outlet.index']) ? 'active' : '' }}">
-            <a href="/laporan"><i class="fa fa-file-excel-o"></i><span>Laporan</span></a>
+        {{-- Laporan (treeview: Laporan Gudang & Laporan Outlet; isi menu mengikuti config/laporan.php) --}}
+        @php
+            $laporanGudang = \App\Support\LaporanCatalog::count('gudang');
+            $laporanOutlet = \App\Support\LaporanCatalog::count('outlet');
+            $laporanGudangActive = request()->routeIs('laporan.index');
+            $laporanOutletActive = request()->routeIs('laporan.outlet.index');
+        @endphp
+        @if ($laporanGudang > 0 || $laporanOutlet > 0)
+        <li class="treeview {{ $laporanGudangActive || $laporanOutletActive ? 'active' : '' }}">
+            <a href="#"><i class="fa fa-file-excel-o"></i><span>Laporan</span><i class="fa fa-angle-left pull-right"></i></a>
+            <ul class="treeview-menu">
+                @if ($laporanGudang > 0)
+                <li class="{{ $laporanGudangActive ? 'active' : '' }}">
+                    <a href="{{ route('laporan.index') }}"><i class="fa fa-building"></i><span>Laporan Gudang</span></a>
+                </li>
+                @endif
+                @if ($laporanOutlet > 0)
+                <li class="{{ $laporanOutletActive ? 'active' : '' }}">
+                    <a href="{{ route('laporan.outlet.index') }}"><i class="fa fa-home"></i><span>Laporan Outlet</span></a>
+                </li>
+                @endif
+            </ul>
         </li>
         @endif
 

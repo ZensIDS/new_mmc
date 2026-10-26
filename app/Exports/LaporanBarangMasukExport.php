@@ -2,66 +2,72 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
+use App\Models\Pembelian;
 use App\Models\StockMovement;
 use App\Support\ReportQuery;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanBarangMasukExport implements FromCollection, WithHeadings, WithTitle
+class LaporanBarangMasukExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Barang-Masuk';
     }
-    public function title(): string
+
+    protected function reportTitle(): string
     {
         return 'Laporan Barang Masuk';
     }
-    public function headings(): array
+
+    protected function columns(): array
     {
-        return ['No', 'Tanggal', 'No Dokumen', 'Supplier', 'Kode Barang', 'Nama Barang', 'Batch', 'Qty Masuk', 'Satuan', 'Keterangan'];
+        return [
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('No Dokumen', 'code', 20),
+            self::col('Supplier', 'text', 24),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Batch', 'code', 18),
+            self::col('Qty Masuk', 'qty', 11),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Keterangan', 'text', 30, ['wrap' => true]),
+        ];
     }
-    public function collection()
+
+    protected function rows(): iterable
     {
         $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
+
         $movements = ReportQuery::betweenDates(
             StockMovement::with(['product'])->where('qty_in', '>', 0),
             'created_at', $mulai, $selesai
         )->orderBy('created_at')->get();
 
         $refs = ReportQuery::resolveReferences($movements, [
-            \App\Models\Pembelian::class => ['supplier'],
+            Pembelian::class => ['supplier'],
         ]);
-        $rows = collect();
-        $no = 1;
+
         foreach ($movements as $m) {
-            $docCode = '-';
-            $supplier = '-';
             $ref = ReportQuery::ref($refs, $m);
-            $docCode = $ref?->code ?? '-';
-            if ($m->reference_type === \App\Models\Pembelian::class) { $supplier = $ref?->supplier?->name ?? '-'; }
+            $supplier = $m->reference_type === Pembelian::class ? ($ref?->supplier?->name ?? '-') : '-';
+
             preg_match('/SKU:\s*(\S+)/', $m->notes ?? '', $matches);
-            $k = $m->product?->konversiDisplay($m->qty_in ?? 0);
-            $rows->push([
-                $no++,
-                $m->created_at->format('d M Y'),
-                $docCode,
+
+            yield [
+                $m->created_at,
+                $ref?->code ?? '-',
                 $supplier,
                 $m->product?->code ?? '-',
                 $m->product?->name ?? '-',
                 $matches[1] ?? '-',
-                ($m->qty_in ?? 0).($k && $k !== '-' ? " ({$k})" : ''),
+                $m->qty_in ?? 0,
+                $this->konversi($m->product, $m->qty_in ?? 0),
                 $m->product?->satuan ?? 'PCS',
-                $m->notes ?? ''
-            ]);
+                $m->notes ?? '',
+            ];
         }
-
-        return $rows;
     }
 }

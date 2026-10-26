@@ -2,53 +2,47 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\PickingList;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanPickingPackingExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPickingPackingExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Picking-Packing';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Picking & Packing';
     }
 
-    public function headings(): array
+    protected function columns(): array
     {
         return [
-            'No',
-            'Tanggal',
-            'Kode Picking',
-            'Kode DO',
-            'Tujuan',
-            'Kode Barang',
-            'Nama Barang',
-            'Lokasi',
-            'Ord',
-            'Pick',
-            'Pack',
-            'Status',
-            'Picker',
-            'Packer',
-            'Keterangan'
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('Kode Picking', 'code', 20),
+            self::col('Kode DO', 'code', 20),
+            self::col('Tujuan', 'text', 22),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Lokasi', 'center', 12),
+            self::col('Qty Order', 'qty', 11),
+            self::col('Konversi Order', 'center', 18),
+            self::col('Qty Pick', 'qty', 10),
+            self::col('Konversi Pick', 'center', 18),
+            self::col('Qty Pack', 'qty', 10),
+            self::col('Status', 'center', 14),
+            self::col('Picker', 'text', 16),
+            self::col('Packer', 'text', 16),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
-        $mulai   = $this->request->input('tanggal_mulai');
+        $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
 
         $pickings = PickingList::with(['requestOrder.owner', 'items.product', 'deliveryOrder'])
@@ -57,34 +51,27 @@ class LaporanPickingPackingExport implements FromCollection, WithHeadings, WithT
             ->orderBy('created_at')
             ->get();
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($pickings as $pk) {
             foreach ($pk->items as $item) {
-                $kOrd  = $item->product?->konversiDisplay($item->qty_to_pick) ?? '-';
-                $kPick = $item->product?->konversiDisplay($item->qty_picked) ?? '-';
-
-                $rows->push([
-                    $no++,
-                    Carbon::parse($pk->created_at)->format('d M Y'),
+                yield [
+                    $pk->created_at,
                     $pk->code,
                     $pk->deliveryOrder?->code ?? '-',
                     $pk->requestOrder?->owner?->name ?? '-',
                     $item->product?->code ?? '-',
                     $item->product?->name ?? '-',
                     $item->location ?? '-',
-                    $item->qty_to_pick.($kOrd && $kOrd !== '-' ? " ({$kOrd})" : ''),
-                    $item->qty_picked.($kPick && $kPick !== '-' ? " ({$kPick})" : ''),
-                    $item->qty_picked.($kPick && $kPick !== '-' ? " ({$kPick})" : ''),
+                    $item->qty_to_pick,
+                    $this->konversi($item->product, $item->qty_to_pick),
+                    $item->qty_picked,
+                    $this->konversi($item->product, $item->qty_picked),
+                    $item->qty_picked,
                     ucfirst($pk->status ?? '-'),
                     $pk->picker?->name ?? '-',
                     '-',
                     $pk->notes ?? '',
-                ]);
+                ];
             }
         }
-
-        return $rows;
     }
 }

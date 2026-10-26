@@ -2,49 +2,52 @@
 
 namespace App\Exports;
 
-use App\Models\Stock;
+use App\Exports\Support\RequestReportExport;
+use App\Models\Product;
+use App\Models\ProductMinimumAdjustment;
 use App\Models\StockMovement;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class LaporanPergerakanExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPergerakanExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Pergerakan-Stok';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Pergerakan dan Kebutuhan Stok';
     }
 
-    public function headings(): array
+    /** Laporan ini berupa posisi stok saat ini, bukan rentang tanggal. */
+    protected function periodText(): ?string
+    {
+        return 'Posisi per '.now()->format('d/m/Y');
+    }
+
+    protected function columns(): array
     {
         return [
-            'No',
-            'Kode Barang',
-            'Nama Barang',
-            'Stok',
-            'Rata-rata Keluar/Bln',
-            'Hari Tanpa Trx',
-            'Kategori',
-            'Status Stok',
-            'Min Stok',
-            'Saran Reorder',
-            'Qty Reorder',
-            'Keterangan'
+            self::col('No', 'no'),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Stok', 'qty', 10),
+            self::col('Konversi Stok', 'center', 18),
+            self::col('Rata-rata Keluar/Bln', 'dec', 14),
+            self::col('Hari Tanpa Trx', 'int', 12),
+            self::col('Kategori', 'center', 16),
+            self::col('Status Stok', 'center', 13),
+            self::col('Min Stok', 'int', 10),
+            self::col('Saran Reorder', 'center', 12),
+            self::col('Qty Reorder', 'qty', 11),
+            self::col('Konversi Reorder', 'center', 18),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
         ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
         $movementStats = StockMovement::selectRaw('product_id, SUM(qty_out) as total_out, MIN(created_at) as first_date, MAX(created_at) as last_date')
             ->groupBy('product_id')
@@ -52,56 +55,65 @@ class LaporanPergerakanExport implements FromCollection, WithHeadings, WithTitle
             ->keyBy('product_id');
 
         // Per PRODUK dengan stok fisik = SUM(stocks.qty) semua batch (bukan per baris batch)
-        $products = \App\Models\Product::with('category')
+        $products = Product::with('category')
             ->withSum('stocks as stock_qty', 'qty')
             ->whereHas('stocks')
             ->orderBy('code')
             ->get();
 
-        $activeAdjs = \App\Models\ProductMinimumAdjustment::activeOn(now()->toDateString())
+        $activeAdjs = ProductMinimumAdjustment::activeOn(now()->toDateString())
             ->orderByDesc('active_from')
             ->orderByDesc('id')
             ->get()
             ->keyBy('product_id');
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($products as $p) {
-            $s = (object) ['product_id' => $p->id, 'product' => $p, 'qty' => (int) ($p->stock_qty ?? 0)];
-            $stat = $movementStats[$s->product_id] ?? null;
+            $qty = (int) ($p->stock_qty ?? 0);
+            $stat = $movementStats[$p->id] ?? null;
             $totalOut = (int) ($stat?->total_out ?? 0);
             $months = max(1, (int) Carbon::parse($stat?->first_date ?? now())->diffInMonths(now()) + 1);
             $avgKeluar = round($totalOut / $months, 1);
-            $hariTanpa = $stat ? now()->diffInDays(Carbon::parse($stat->last_date)) : 0;
-            $baseMin = $s->product?->min_stock ?? 0;
-            $adj     = $activeAdjs->get($s->product_id);
+            $hariTanpa = $stat ? (int) now()->diffInDays(Carbon::parse($stat->last_date)) : 0;
+            $baseMin = $p->min_stock ?? 0;
+            $adj = $activeAdjs->get($p->id);
             $minStok = $adj ? (int) ceil($baseMin * (1 + $adj->adjustment_percentage / 100)) : (int) $baseMin;
 
             $kategori = $avgKeluar >= 10 ? 'Fast Moving' : ($avgKeluar >= 3 ? 'Medium Moving' : 'Slow Moving');
-            $statusStok = ($s->qty ?? 0) > $minStok ? 'Aman' : (($s->qty ?? 0) > 0 ? 'Kritis' : 'Habis');
-            $saranReorder = ($s->qty ?? 0) <= $minStok ? 'Ya' : 'Tidak';
-            $qtyReorder = ($s->qty ?? 0) <= $minStok ? max(0, $minStok * 2 - ($s->qty ?? 0)) : 0;
+            $statusStok = $qty > $minStok ? 'Aman' : ($qty > 0 ? 'Kritis' : 'Habis');
+            $perluReorder = $qty <= $minStok;
+            $qtyReorder = $perluReorder ? max(0, $minStok * 2 - $qty) : 0;
 
-            $qty      = $s->qty ?? 0;
-            $kStok    = $s->product?->konversiDisplay($qty);
-            $kReorder = $qtyReorder > 0 ? $s->product?->konversiDisplay($qtyReorder) : null;
-            $rows->push([
-                $no++,
-                $s->product?->code ?? '-',
-                $s->product?->name ?? '-',
-                $qty.($kStok && $kStok !== '-' ? " ({$kStok})" : ''),
+            yield [
+                $p->code ?? '-',
+                $p->name ?? '-',
+                $qty,
+                $this->konversi($p, $qty),
                 $avgKeluar,
                 $hariTanpa,
                 $kategori,
                 $statusStok,
                 $minStok,
-                $saranReorder,
-                $qtyReorder > 0 ? ($qtyReorder.($kReorder && $kReorder !== '-' ? " ({$kReorder})" : '')) : 0,
-                '',
-            ]);
+                $perluReorder ? 'Ya' : 'Tidak',
+                $qtyReorder,
+                $qtyReorder > 0 ? $this->konversi($p, $qtyReorder) : null,
+                null,
+            ];
         }
+    }
 
-        return $rows;
+    protected function decorateData(Worksheet $sheet, array $columns, array $data, int $first, int $lastData, string $last): void
+    {
+        parent::decorateData($sheet, $columns, $data, $first, $lastData, $last);
+
+        $this->colorByHeader($sheet, 'Status Stok', $first, $lastData, [
+            'Aman' => 'FF00803C', 'Kritis' => 'FFC55A11', 'Habis' => 'FFC00000',
+        ]);
+        $this->colorByHeader($sheet, 'Saran Reorder', $first, $lastData, ['Ya' => 'FFC00000']);
+    }
+
+    protected function numberFormat(array $column, int $index): string
+    {
+        // Rata-rata keluar memang 1 desimal.
+        return $column['header'] === 'Rata-rata Keluar/Bln' ? '#,##0.0;-#,##0.0;0.0' : parent::numberFormat($column, $index);
     }
 }

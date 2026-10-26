@@ -2,60 +2,65 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
 use App\Models\RequestOrder;
-use Carbon\Carbon;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanPRExport implements FromCollection, WithHeadings, WithTitle
+class LaporanPRExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'PR';
     }
-    public function title(): string
+
+    protected function reportTitle(): string
     {
         return 'Laporan PR';
     }
-    public function headings(): array
+
+    protected function columns(): array
     {
-        return ['No', 'Tanggal PR', 'Kode PR', 'Outlet', 'Kode Barang', 'Nama Barang', 'QTY', 'Satuan', 'Status', 'Kode PO', 'Keterangan'];
+        return [
+            self::col('No', 'no'),
+            self::col('Tanggal PR', 'date'),
+            self::col('Kode PR', 'code', 20),
+            self::col('Outlet', 'text', 22),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('QTY', 'qty', 9),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Status', 'center', 14),
+            self::col('Kode PO', 'code', 18),
+            self::col('Keterangan', 'text', 24, ['wrap' => true]),
+        ];
     }
-    public function collection()
+
+    protected function rows(): iterable
     {
         $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
+
         $orders = RequestOrder::with(['owner', 'items.product'])
             ->when($mulai, fn ($q) => $q->whereDate('request_date', '>=', $mulai))
             ->when($selesai, fn ($q) => $q->whereDate('request_date', '<=', $selesai))
             ->orderBy('request_date')->get();
-        $rows = collect();
-        $no = 1;
+
         foreach ($orders as $ro) {
             foreach ($ro->items as $item) {
-                $k = $item->product?->konversiDisplay($item->qty_requested) ?? '-';
-
-                $rows->push([
-                    $no++,
-                    Carbon::parse($ro->request_date)->format('d M Y'),
+                yield [
+                    $ro->request_date,
                     $ro->code,
                     $ro->owner?->name ?? '-',
                     $item->product?->code ?? '-',
                     $item->product?->name ?? '-',
-                    $item->qty_requested.($k && $k !== '-' ? " ({$k})" : ''),
+                    $item->qty_requested,
+                    $this->konversi($item->product, $item->qty_requested),
                     $item->product?->satuan ?? 'PCS',
                     ucfirst($ro->status ?? '-'),
                     '-',
-                    ''
-                ]);
+                    null,
+                ];
             }
         }
-
-        return $rows;
     }
 }

@@ -2,37 +2,43 @@
 
 namespace App\Exports;
 
+use App\Exports\Support\RequestReportExport;
+use App\Models\DeliveryOrder;
 use App\Models\StockMovement;
 use App\Support\ReportQuery;
-use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\Exportable;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\WithTitle;
 
-class LaporanBarangKeluarExport implements FromCollection, WithHeadings, WithTitle
+class LaporanBarangKeluarExport extends RequestReportExport
 {
-    use Exportable;
-    protected $request;
-
-    public function __construct(Request $request)
+    protected function fileSlug(): string
     {
-        $this->request = $request;
+        return 'Barang-Keluar';
     }
 
-    public function title(): string
+    protected function reportTitle(): string
     {
         return 'Laporan Barang Keluar';
     }
 
-    public function headings(): array
+    protected function columns(): array
     {
-        return ['No', 'Tanggal', 'No Dokumen', 'Tujuan', 'Kode Barang', 'Nama Barang', 'Batch', 'Satuan', 'Qty Keluar', 'Keterangan'];
+        return [
+            self::col('No', 'no'),
+            self::col('Tanggal', 'date'),
+            self::col('No Dokumen', 'code', 20),
+            self::col('Tujuan', 'text', 24),
+            self::col('Kode Barang', 'code', 16),
+            self::col('Nama Barang', 'text', 36, ['wrap' => true]),
+            self::col('Batch', 'code', 18),
+            self::col('Qty Keluar', 'qty', 11),
+            self::col('Konversi', 'center', 18),
+            self::col('Satuan', 'center', 10),
+            self::col('Keterangan', 'text', 30, ['wrap' => true]),
+        ];
     }
 
-    public function collection()
+    protected function rows(): iterable
     {
-        $mulai   = $this->request->input('tanggal_mulai');
+        $mulai = $this->request->input('tanggal_mulai');
         $selesai = $this->request->input('tanggal_selesai');
 
         $movements = ReportQuery::betweenDates(
@@ -41,38 +47,26 @@ class LaporanBarangKeluarExport implements FromCollection, WithHeadings, WithTit
         )->orderBy('created_at')->get();
 
         $refs = ReportQuery::resolveReferences($movements, [
-            \App\Models\DeliveryOrder::class => ['owner', 'requestOrder.owner'],
+            DeliveryOrder::class => ['owner', 'requestOrder.owner'],
         ]);
 
-        $rows = collect();
-        $no = 1;
-
         foreach ($movements as $m) {
-            $docCode = '-';
-            $tujuan  = '-';
-
             $ref = ReportQuery::ref($refs, $m);
-            $docCode = $ref?->code ?? '-';
-            $tujuan = $ref?->owner?->name ?? $ref?->requestOrder?->owner?->name ?? '-';
 
             preg_match('/SKU:\s*(\S+)/', $m->notes ?? '', $matches);
-            $batch = $matches[1] ?? '-';
-            $k = $m->product?->konversiDisplay($m->qty_out ?? 0);
 
-            $rows->push([
-                $no++,
-                $m->created_at->format('d M Y'),
-                $docCode,
-                $tujuan,
+            yield [
+                $m->created_at,
+                $ref?->code ?? '-',
+                $ref?->owner?->name ?? $ref?->requestOrder?->owner?->name ?? '-',
                 $m->product?->code ?? '-',
                 $m->product?->name ?? '-',
-                $batch,
+                $matches[1] ?? '-',
+                $m->qty_out ?? 0,
+                $this->konversi($m->product, $m->qty_out ?? 0),
                 $m->product?->satuan ?? 'PCS',
-                ($m->qty_out ?? 0).($k && $k !== '-' ? " ({$k})" : ''),
                 $m->notes ?? '',
-            ]);
+            ];
         }
-
-        return $rows;
     }
 }
