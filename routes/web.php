@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
 
 Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/sales-data', [DashboardController::class, 'salesData'])->name('dashboard.sales-data');
     Route::get('/setting', [DashboardController::class, 'setting'])->name('setting');
     Route::post('/setting-store', [DashboardController::class, 'store'])->name('setting.store');
     Route::get('/get-customer/{penjualan_id}', [CustomerController::class, 'getCustomer']);

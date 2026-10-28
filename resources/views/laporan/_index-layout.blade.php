@@ -27,7 +27,7 @@
 <section class="content rpt-page">
 
     {{-- Hero: judul + pencarian + ringkasan --}}
-    <div class="rpt-hero">
+    {{-- <div class="rpt-hero">
         <div class="rpt-hero-inner">
             <div class="rpt-hero-text">
                 <span class="rpt-hero-eyebrow"><i class="fa {{ $kindMeta['icon'] ?? 'fa-bar-chart' }}"></i> Pusat Laporan</span>
@@ -53,11 +53,11 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> --}}
 
-    @foreach (($notes ?? []) as $note)
+    {{-- @foreach (($notes ?? []) as $note)
         <div class="rpt-note"><i class="fa fa-info-circle"></i> <span>{{ $note }}</span></div>
-    @endforeach
+    @endforeach --}}
 
     {{-- Tab kategori --}}
     @if (count($groups) > 0)

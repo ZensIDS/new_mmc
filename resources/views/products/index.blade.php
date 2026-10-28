@@ -19,25 +19,30 @@
                 <div class="box">
                     <div class="box-header">
                         <a href="{{ route('product.create') }}" class="btn btn-sm bg-light-blue"><i class="fa fa-plus"></i>Tambah</a>
-                        <a href="{{ route('product.export') }}" class="btn btn-sm bg-green">
+                        {{-- <a href="{{ route('product.export') }}" class="btn btn-sm bg-green">
                             <i class="fa fa-download"></i> Export
-                        </a>
-                        <a href="{{ route('product.export.template') }}" class="btn btn-sm bg-gray">
+                        </a> --}}
+                        {{-- <a href="{{ route('product.export.template') }}" class="btn btn-sm bg-gray">
                             <i class="fa fa-file-excel-o"></i> Template
                         </a>
                         <button class="btn btn-sm bg-yellow" data-toggle="modal" data-target="#modalImport">
                             <i class="fa fa-upload"></i> Import
                         </button>
-                        <hr />
-                        <a href="{{ route('product.min-stock.export') }}" class="btn btn-sm bg-teal">
+                        <hr /> --}}
+                        {{-- <a href="{{ route('product.min-stock.export') }}" class="btn btn-sm bg-teal">
                             <i class="fa fa-download"></i> Export Min Stock
-                        </a>
-                        <a href="{{ route('product.min-stock.export.template') }}" class="btn btn-sm bg-gray">
+                        </a> --}}
+                        {{-- <a href="{{ route('product.min-stock.export.template') }}" class="btn btn-sm bg-gray">
                             <i class="fa fa-file-excel-o"></i> Template Min Stock
-                        </a>
-                        <button class="btn btn-sm bg-orange" data-toggle="modal" data-target="#modalImportMinStock">
+                        </a> --}}
+                        {{-- <button class="btn btn-sm bg-orange" data-toggle="modal" data-target="#modalImportMinStock">
                             <i class="fa fa-upload"></i> Import Min Stock
-                        </button>
+                        </button> --}}
+                        {{-- @if($canAdjustMinStock ?? false)
+                            <button type="button" class="btn btn-sm btn-warning" data-toggle="modal" data-target="#modalMinStockAdj">
+                                <i class="fa fa-sliders"></i> Pengaturan Min Stok
+                            </button>
+                        @endif --}}
                         <form method="GET" action="{{ route('product.index') }}" class="row" style="margin-top:10px;">
                             <div class="col-xs-12" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                 <input type="text" name="search" value="{{ $search }}" class="form-control input-sm"
@@ -137,7 +142,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="box-body">
+                    {{-- <div class="box-body">
                         <h4 style="margin-top:0;">Progress Import Produk</h4>
                         <div class="table-responsive">
                             <table class="table table-bordered table-striped">
@@ -183,7 +188,7 @@
                         <p class="help-block" style="margin-bottom:0;">
                             Chunk size import produk sekarang 100 baris. Baris gagal akan diskip, dan progress batch diperbarui otomatis.
                         </p>
-                    </div>
+                    </div> --}}
                     <div class="box-body table-responsive text-nowrap">
                         <table id="products-table" class="table table-bordered table-striped">
                             <thead>
@@ -308,6 +313,88 @@
             </div><!-- /.col -->
         </div><!-- /.row -->
     </section><!-- /.content -->
+
+    @if($canAdjustMinStock ?? false)
+    <!-- STOCK ADJUSTMENT MODAL (dipindah dari dashboard) -->
+    <div class="modal fade" id="modalMinStockAdj" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 class="modal-title">
+                        <i class="fa fa-sliders"></i> Pengaturan Perubahan Minimal Stok Produk
+                    </h4>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-sm-4">
+                            <div class="form-group">
+                                <label>Persentase Kenaikan (%)</label>
+                                <input type="number" class="form-control" id="adjPercentage"
+                                    min="1" max="500" placeholder="Contoh: 20 untuk +20%">
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="form-group">
+                                <label>Aktif Dari</label>
+                                <input type="date" class="form-control" id="adjActiveFrom"
+                                    value="{{ now()->toDateString() }}">
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="form-group">
+                                <label>Aktif Sampai <small class="text-muted">(kosongkan = selamanya)</small></label>
+                                <input type="date" class="form-control" id="adjActiveUntil">
+                            </div>
+                        </div>
+                    </div>
+                    <table id="tableAdjProducts" class="table table-bordered table-striped table-hover" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th width="30"><input type="checkbox" id="adjCheckAll"></th>
+                                <th>Kode</th>
+                                <th>Nama Produk</th>
+                                <th>Stok Saat Ini</th>
+                                <th>Min Stok</th>
+                                <th>Min Efektif (sekarang)</th>
+                                <th>Min Efektif (tanggal)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adjProductBody">
+                            @foreach($adjustmentProducts as $p)
+                                <tr>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="adj-product-check" value="{{ $p->id }}">
+                                    </td>
+                                    <td>{{ $p->code }}</td>
+                                    <td>{{ $p->name }}</td>
+                                    <td class="text-center">{{ $p->current_stock }}</td>
+                                    <td class="text-center">{{ $p->min_stock }}</td>
+                                    <td class="text-center">
+                                        {{ $p->effective_min }}
+                                        @if($p->effective_min > $p->min_stock)
+                                            <span class="label label-info">+{{ $p->effective_min - $p->min_stock }}</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        {{ $p->active_from?->format('d M Y') }} - {{ $p->active_until?->format('d M Y') }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Tutup</button>
+                    <button type="button" class="btn btn-primary" id="btnSimpanAdj">
+                        <i class="fa fa-save"></i> Simpan Adjustment
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- END STOCK ADJUSTMENT MODAL -->
+    @endif
 @endsection
 @section('page-script')
     <script>
@@ -393,4 +480,81 @@
 
         });
     </script>
+
+    @if($canAdjustMinStock ?? false)
+    <script>
+        // Pengaturan Min Stok (dipindah dari dashboard)
+        let adjTable = null;
+
+        $('#modalMinStockAdj').on('shown.bs.modal', function () {
+            if (!adjTable) {
+                adjTable = $('#tableAdjProducts').DataTable({
+                    pageLength: 10,
+                    order: [[2, 'asc']],
+                    columnDefs: [{ orderable: false, targets: [0] }],
+                    language: {
+                        search: "Cari:",
+                        lengthMenu: "Tampilkan _MENU_ baris",
+                        info: "Menampilkan _START_-_END_ dari _TOTAL_ produk",
+                        paginate: { previous: "Prev", next: "Next" },
+                        zeroRecords: "Tidak ada produk"
+                    }
+                });
+            }
+        });
+
+        $(document).on('change', '#adjCheckAll', function () {
+            const checked = $(this).prop('checked');
+            if (adjTable) {
+                adjTable.rows().nodes().each(function (node) {
+                    $(node).find('.adj-product-check').prop('checked', checked);
+                });
+            }
+        });
+
+        $('#btnSimpanAdj').on('click', function () {
+            const productIds = [];
+            if (adjTable) {
+                adjTable.rows().nodes().each(function (node) {
+                    const $cb = $(node).find('.adj-product-check:checked');
+                    if ($cb.length) productIds.push($cb.val());
+                });
+            }
+
+            const pct        = parseInt($('#adjPercentage').val()) || 0;
+            const activeFrom = $('#adjActiveFrom').val();
+            const activeUntil = $('#adjActiveUntil').val();
+
+            if (productIds.length === 0) { alert('Pilih minimal satu produk.'); return; }
+            if (pct < 1)                  { alert('Persentase kenaikan minimal 1%.'); return; }
+            if (!activeFrom)              { alert('Isi tanggal aktif dari.'); return; }
+
+            $('#btnSimpanAdj').prop('disabled', true).text('Menyimpan...');
+
+            $.ajax({
+                url: '{{ route("product.minimum-adjustment.store") }}',
+                method: 'POST',
+                data: {
+                    _token:                '{{ csrf_token() }}',
+                    product_ids:           productIds,
+                    adjustment_percentage: pct,
+                    active_from:           activeFrom,
+                    active_until:          activeUntil || null,
+                },
+                success: function (res) {
+                    alert(res.message);
+                    $('#modalMinStockAdj').modal('hide');
+                    location.reload();
+                },
+                error: function (xhr) {
+                    const msg = xhr.responseJSON?.message || 'Terjadi kesalahan.';
+                    alert('Gagal: ' + msg);
+                },
+                complete: function () {
+                    $('#btnSimpanAdj').prop('disabled', false).text('Simpan Adjustment');
+                }
+            });
+        });
+    </script>
+    @endif
 @endsection

@@ -13,6 +13,7 @@ use App\Models\Category;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\ProductImport;
+use App\Models\ProductMinimumAdjustment;
 use App\Models\Stock;
 use App\Models\Supplier;
 use App\Support\OutletAccess;
@@ -191,6 +192,10 @@ class ProductController extends Controller
             ->paginate(10)
             ->withQueryString();
 
+        // Sama seperti tombol lama di dashboard (admin-gudang & superadmin) + admin pusat (= superadmin).
+        $canAdjustMinStock = in_array($request->user()?->role, ['superadmin', 'admin', 'admin-gudang'], true);
+        $adjustmentProducts = $canAdjustMinStock ? $this->minStockAdjustmentProducts() : collect();
+
         return view('products.index', [
             'products' => $products,
             'recentImports' => ProductImport::query()
@@ -210,7 +215,40 @@ class ProductController extends Controller
             'selectedLokasi' => $request->input('lokasi'),
             'statusProdukOptions' => Product::STATUS_PRODUK,
             'selectedStatusProduk' => $statusFilter,
+            // Pengaturan Min Stok (dipindah dari dashboard, Tahap 3.6)
+            'canAdjustMinStock' => $canAdjustMinStock,
+            'adjustmentProducts' => $adjustmentProducts,
         ]);
+    }
+
+    /**
+     * Daftar produk + min stok efektif untuk modal Pengaturan Min Stok.
+     * Hanya dihitung untuk role yang boleh memakainya (query-nya memuat semua produk).
+     */
+    protected function minStockAdjustmentProducts()
+    {
+        $activeAdjustments = ProductMinimumAdjustment::query()
+            ->activeOn()
+            ->orderByDesc('active_from')
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('product_id');
+
+        return Product::select('id', 'code', 'name', 'min_stock')
+            ->withSum('stocks', 'qty')
+            ->orderBy('name')
+            ->get()
+            ->map(function ($p) use ($activeAdjustments) {
+                $adj = $activeAdjustments->get($p->id)?->first();
+                $p->active_from   = $adj?->active_from;
+                $p->active_until  = $adj?->active_until;
+                $p->current_stock = (int) ($p->stocks_sum_qty ?? 0);
+                $p->effective_min = $adj
+                    ? (int) ceil($p->min_stock * (1 + $adj->adjustment_percentage / 100))
+                    : (int) $p->min_stock;
+
+                return $p;
+            });
     }
 
     public function create()

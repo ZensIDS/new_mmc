@@ -7,12 +7,15 @@ use App\Models\DeliveryOrderItem;
 use App\Models\Pembelian;
 use App\Models\Penjualan;
 use App\Models\Product;
+use App\Models\Outlet;
 use App\Models\ProductMinimumAdjustment;
 use App\Models\RefundPembelian;
 use App\Models\RequestOrder;
 use App\Models\RequestOrderItem;
 use App\Models\Stock;
 use App\Models\Supplier;
+use App\Services\DashboardSalesService;
+use App\Support\OutletAccess;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -24,14 +27,31 @@ class DashboardController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->role === 'staff-outlet') {
-            $requestOrdersBase = RequestOrder::where('owner_id', $user->outlet_id);
+        // K8: dashboard penjualan untuk semua role kecuali admin-gudang.
+        // K23: staff-outlet & kasir hanya melihat outlet sendiri (dipaksa di server).
+        $showSales  = in_array($user->role, config('roles.sales_dashboard', []), true);
+        $showGudang = in_array($user->role, ['superadmin', 'admin', 'owner', 'admin-gudang'], true);
 
-            return view('dashboard.index', [
-                'isStaffOutletDashboard' => true,
-                'outletRequestTotal' => (clone $requestOrdersBase)->count(),
-                'outletRequestPending' => (clone $requestOrdersBase)->where('status', 'pending')->count(),
-            ]);
+        $salesOptions = [
+            'showSales'    => $showSales,
+            'showGudang'   => $showGudang,
+            // admin-gudang: blok gudang tampil langsung; role lain: ringkas (dibuka manual)
+            'gudangOpen'   => $user->role === 'admin-gudang',
+            'outletBound'  => in_array($user->role, ['staff-outlet', 'kasir'], true),
+            'outlets'      => $showSales ? OutletAccess::outlets() : collect(),
+        ];
+
+        if (! $showGudang) {
+            // staff-outlet & kasir: kartu penjualan outlet sendiri (+ kartu permintaan untuk staff-outlet)
+            $data = ['isStaffOutletDashboard' => $user->role === 'staff-outlet'] + $salesOptions;
+
+            if ($user->role === 'staff-outlet') {
+                $requestOrdersBase = RequestOrder::where('owner_id', $user->outlet_id);
+                $data['outletRequestTotal']   = (clone $requestOrdersBase)->count();
+                $data['outletRequestPending'] = (clone $requestOrdersBase)->where('status', 'pending')->count();
+            }
+
+            return view('dashboard.index', $data);
         }
 
         $urgentSuppliers = Supplier::whereNotNull('deadline_days')
@@ -159,24 +179,9 @@ class DashboardController extends Controller
             ]);
         }
 
-        $adjustmentProducts = Product::select('id', 'code', 'name', 'min_stock')
-            ->withSum('stocks', 'qty')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($p) use ($activeAdjustments) {
-                $adj = $activeAdjustments->get($p->id)?->first();
-                $p->active_from   = $adj?->active_from;
-                $p->active_until  = $adj?->active_until;
-                $p->current_stock = (int) ($p->stocks_sum_qty ?? 0);
-                $p->effective_min = $adj
-                    ? (int) ceil($p->min_stock * (1 + $adj->adjustment_percentage / 100))
-                    : (int) $p->min_stock;
-
-                return $p;
-            });
-
         return view('dashboard.index', [
             'isStaffOutletDashboard' => false,
+            ...$salesOptions,
             'products'           => Product::count(),
             'stocks'             => Stock::sum('qty'),
             'penjualans'         => Penjualan::count(),
@@ -200,9 +205,57 @@ class DashboardController extends Controller
             'urgentSuppliers'    => $urgentSuppliers,
             'nearExpiryStocks'   => $nearExpiryStocks,
             'lowVelocityProducts' => $lowVelocityProducts,
-            'adjustmentProducts' => $adjustmentProducts,
             'pendingOwnerApprovals' => $pendingOwnerApprovals,
         ]);
+    }
+
+    /**
+     * Data penjualan dashboard (JSON, dimuat via AJAX supaya halaman pertama cepat).
+     * Parameter: tanggal_mulai, tanggal_selesai (default: bulan berjalan), outlet_id, refresh.
+     */
+    public function salesData(Request $request, DashboardSalesService $service)
+    {
+        $user = $request->user();
+        abort_unless(in_array($user->role, config('roles.sales_dashboard', []), true), 403, 'Tidak punya akses dashboard penjualan.');
+
+        $today = now()->startOfDay();
+        $start = $this->parseDate($request->input('tanggal_mulai')) ?? $today->copy()->startOfMonth();
+        $end   = $this->parseDate($request->input('tanggal_selesai')) ?? $today->copy();
+        if ($end->lt($start)) {
+            [$start, $end] = [$end, $start];
+        }
+        abort_if(
+            (int) abs($start->diffInDays($end)) + 1 > DashboardSalesService::MAX_RANGE_DAYS,
+            422,
+            'Rentang tanggal maksimal '.DashboardSalesService::MAX_RANGE_DAYS.' hari.'
+        );
+
+        // Outlet dipaksa di server untuk role terikat outlet (K23), bukan hanya disembunyikan di UI.
+        if (in_array($user->role, ['staff-outlet', 'kasir'], true)) {
+            $outletId = OutletAccess::id($request);
+        } elseif ($request->filled('outlet_id')) {
+            $outletId = (int) $request->input('outlet_id');
+            abort_unless(Outlet::whereKey($outletId)->exists(), 404, 'Outlet tidak ditemukan.');
+        } else {
+            $outletId = null;
+        }
+
+        return response()->json(
+            $service->payload($start->copy()->startOfDay(), $end->copy()->endOfDay(), $outletId, $request->boolean('refresh'))
+        );
+    }
+
+    protected function parseDate($value): ?Carbon
+    {
+        if (! $value) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->startOfDay();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function setting()

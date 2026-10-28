@@ -1,6 +1,6 @@
 # BIG REVISI MMC — Analisa, Rekomendasi & Todolist
 
-> Status: **DRAFT ANALISA v0.8** — belum ada kode yang diubah. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
+> Status: **DRAFT ANALISA v0.9** — belum ada kode yang diubah. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
 > v0.2 sudah diperiksa terhadap kode lengkap (`Archive.zip`: app/, routes, views, migrations). Isi v0.1 yang meleset sudah dikoreksi.
 
 ## CARA KERJA (disepakati)
@@ -370,13 +370,13 @@ Aturan kerja (sama seperti revisi sebelumnya): tiap tahap kirim **hanya file yan
 - [~] 2.8 Uji: **belum bisa dijalankan di sini** (tidak ada PHP/database di lingkungan kerja ini). Checklist uji ada di Log Progres; perlu dijalankan di lokal/staging sebelum rilis (data besar, lintas tengah malam, nota dengan retur)
 
 ### TAHAP 3 — Dashboard (item 1)
-- [ ] 3.1 `DashboardSalesService` (agregat SQL, aturan retur, cache pendek)
-- [ ] 3.2 Partial kartu penjualan + filter periode/outlet; tampil untuk semua role kecuali `admin-gudang` (K8); staff-outlet/kasir hanya outlet sendiri (K23)
-- [ ] 3.3 Grafik: tren, per outlet, metode bayar, jam ramai (AJAX)
-- [ ] 3.4 Ranking: top produk terjual, top kasir, transaksi terbaru
-- [ ] 3.5 Blok gudang dipindah ke bawah (collapse); judul sapaan diperbaiki
-- [ ] 3.6 Hapus tombol & modal Min Stok dari dashboard; pindahkan tombol ke `/product` (K9)
-- [ ] 3.7 Cocokkan angka dengan Laporan Penjualan Outlet
+- [x] 3.1 `App\Services\DashboardSalesService` (agregat SQL `SUM/COUNT/GROUP BY`, rentang `created_at >= ? AND <= ?` tanpa `whereDate`, cache 2 menit per periode+outlet, `?refresh=1` melewati cache). Rumus: omzet bersih = nilai nota paid/null − `returned_total` retur atas nota di periode (retur dibuat s/d akhir periode) + `replacement_total` retur yang dibuat di periode; transaksi = nota + retur ber-pengganti (sama dengan `OutletLaporanService::sales`) — menunggu dicek
+- [x] 3.2 Kartu penjualan + filter periode (daterangepicker: Hari ini … Tahun ini, maks. 366 hari, default bulan berjalan) + filter outlet. Kartu: Omzet Hari Ini (+ vs kemarin), Transaksi Hari Ini, Omzet Periode (+ vs periode sebelumnya), Transaksi Periode, Rata-rata/Transaksi, Total Diskon+Promo+Voucher (+ info retur & pengganti). Tampil untuk semua role kecuali `admin-gudang` (K8, `config/roles.php` → `sales_dashboard`); `staff-outlet` & `kasir` dipaksa ke outlet sendiri di server lewat `OutletAccess` (K23); endpoint `GET /dashboard/sales-data` (403 untuk role lain) — menunggu dicek
+- [x] 3.3 Grafik (Highcharts, dimuat via AJAX satu panggilan): Tren (omzet + jumlah transaksi; per bulan bila rentang > 62 hari), Metode Pembayaran (donut), Penjualan per Outlet (disembunyikan bila hanya satu outlet), Jam Ramai — menunggu dicek
+- [x] 3.4 Ranking: Top 10 Produk Terjual (qty dikurangi retur yang tertaut item nota), Top Kasir, 10 Transaksi Terbaru. *Estimasi laba kotor (opsional di analisa) tidak dibuat — butuh keputusan HPP per item.* — menunggu dicek
+- [x] 3.5 Blok gudang dipisah ke `dashboard/_gudang.blade.php` dan dipindah ke bawah; untuk role penjualan tersembunyi dengan tombol "Tampilkan Info Gudang" (grafik gudang dibuat saat pertama dibuka), `admin-gudang` langsung tampil. Sapaan jadi "Selamat Datang, {nama}!" (bukan "…di Gudang"). Kartu "Produk Terlaris" diganti judul **Top 5 Barang Dikirim ke Outlet** karena sebenarnya berbasis pengiriman gudang→outlet. Query `adjustmentProducts` (memuat semua produk) dihapus dari dashboard sehingga dashboard lebih ringan — menunggu dicek
+- [x] 3.6 Tombol & modal **Pengaturan Min Stok** dipindah ke `/product` (rute `product.minimum-adjustment.store` tidak berubah); datanya hanya dihitung untuk `superadmin`, `admin`, `admin-gudang` — menunggu dicek
+- [~] 3.7 Cocokkan angka dengan Laporan Penjualan Outlet: **belum bisa dijalankan di sini** (tidak ada database). Checklist uji di Log Progres (butir 10 di bawah). Selisih kecil yang diketahui: retur pada nota ber-voucher (Laporan mengalokasikan voucher per item, dashboard memakai `returned_total`) dan retur tanpa `penjualan_item_id` tidak mengurangi qty di Top Produk
 
 ### TAHAP 4 — Role Admin + Hapus Pending (item 2)
 **4A. Role**
@@ -534,6 +534,8 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 
 - v0.8 — Item 5.8b (styling export di luar katalog) **dihapus** dari todolist (K26: tidak dikerjakan). Tahap 2 (Halaman Penjualan) dikerjakan: 2.1–2.7 selesai, 2.8 menunggu uji.
 
+- v0.9 — Tahap 3 (Dashboard) dikerjakan: 3.1–3.6 selesai, 3.7 menunggu uji dengan data nyata. Role `admin` belum bisa membuka `/dashboard` karena grup rute masih memakai daftar role lama — dibereskan di Tahap 4A.1/4A.2c.
+
 ---
 
 ## 9. Log progres (di-update tiap tahap selesai)
@@ -551,6 +553,7 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 | 2026-10-26 | Tahap 2 (2.1–2.7 Halaman Penjualan; 5.8b dihapus) | Menunggu dicek (2.8 perlu diuji) | `app/Support/PenjualanFilter.php` (baru), `app/Http/Controllers/PenjualanController.php`, `app/Services/OutletLaporanService.php` (hanya `bonTotal`/`setoranTotal` jadi `public`), `resources/views/penjualan/index.blade.php`, `resources/views/penjualan/_detail.blade.php` (baru), `resources/views/penjualan/rekap-pdf.blade.php` (baru), `routes/web.php`, `big_revisi_mmc.md` |
 
 | 2026-10-26 | Tahap 2 revisi (kartu modern, kolom Customer, rekap Excel) | Menunggu dicek | `app/Exports/PenjualanRekapExport.php` (baru), `app/Http/Controllers/PenjualanController.php`, `resources/views/penjualan/index.blade.php`, `app/Exports/Support/BaseReportExport.php` (tipe kolom `rupiah` baru), `app/Support/PenjualanFilter.php` (breakdown per shift); **hapus** `resources/views/penjualan/rekap-pdf.blade.php` (tidak dipakai lagi), `big_revisi_mmc.md` |
+| 2026-10-28 | Tahap 3 (3.1–3.6 Dashboard penjualan; Min Stok pindah ke /product) | Menunggu dicek (3.7 perlu diuji) | `app/Services/DashboardSalesService.php` (baru), `app/Http/Controllers/DashboardController.php`, `app/Http/Controllers/ProductController.php`, `resources/views/dashboard/index.blade.php`, `_sales.blade.php` (baru), `_sales-script.blade.php` (baru), `_gudang.blade.php` (baru), `resources/views/products/index.blade.php`, `routes/web.php`, `big_revisi_mmc.md` |
 
 **Checklist uji Tahap 2 (2.8)** — jalankan di lokal/staging dulu:
 1. Buka `/penjualan` tanpa parameter → hanya nota **hari ini** (Asia/Jakarta); URL tetap bersih. Ganti preset → tabel, kartu, dan URL ikut berubah; salin URL ke tab baru → filter sama.
@@ -562,3 +565,15 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 7. Bandingkan Rekap Ringkas dengan **Laporan Penjualan Outlet** untuk periode/outlet yang sama: bon & setoran harus sama persis; total penjualan bisa berbeda **hanya** pada nota yang diretur (laporan mengurangi retur per item, halaman ini menampilkan nilai nota + retur terpisah).
 8. Data besar: uji dengan rentang 30 hari / setahun → tabel tetap cepat (butuh index `penjualans(created_at)` dari 0.3 sudah dijalankan).
 9. Alur retur (`/refundPenjualan/create`) tetap bisa memilih outlet → nota → item (memakai `getPenjualan`/`getItems`).
+
+**Checklist uji Tahap 3 (3.7)** — jalankan di lokal/staging dulu:
+1. Login `superadmin`: `/dashboard` menampilkan Rekap Penjualan di atas; blok gudang tersembunyi, tombol "Tampilkan Info Gudang" membuka blok + grafik gudang tampil normal; klik kartu "Stok Kurang" membuka blok lalu menggulir ke tabelnya.
+2. Login `admin-gudang`: hanya dashboard gudang (tanpa rekap penjualan), langsung terbuka; `GET /dashboard/sales-data` → 403.
+3. Login `kasir` dan `staff-outlet`: hanya outlet sendiri (dropdown outlet tidak ada, ada label outlet); coba `/dashboard/sales-data?outlet_id=<outlet lain>` → 403; staff-outlet tetap melihat 2 kartu permintaan gudang.
+4. Bandingkan **Omzet Periode** dan **Transaksi Periode** dengan **Laporan Penjualan Outlet** (Excel, sheet Rekap) untuk periode & outlet yang sama: harus sama; selisih hanya boleh muncul pada retur atas nota ber-voucher.
+5. Pilih rentang yang memuat nota yang diretur dan nota dengan barang pengganti → omzet turun sebesar retur, bertambah sebesar pengganti; "Retur dikurangkan"/"pengganti" di kartu terakhir cocok.
+6. Rentang > 62 hari → tren berubah per bulan; rentang > 366 hari → pesan galat jelas; "Hari Ini" lintas tengah malam mengikuti zona Asia/Jakarta.
+7. Klik tombol refresh → data dimuat ulang tanpa cache; buka dua kali berturut-turut (tanpa refresh) → kali kedua cepat (cache).
+8. Nota yang dihapus (soft delete) tidak ikut terhitung di kartu, grafik, maupun ranking.
+9. `/product`: tombol **Pengaturan Min Stok** muncul untuk `superadmin`/`admin-gudang` saja; simpan penyesuaian → halaman reload dan "Produk di Bawah Min Stok" di dashboard gudang ikut berubah.
+10. Data besar (30 hari – setahun) → halaman tetap terbuka cepat (kerangka dulu, data menyusul); cek jumlah query & waktu respons `/dashboard/sales-data` (≈45 query saat cache kosong) terhadap batas `max_user_connections` = 25.
