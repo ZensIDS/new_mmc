@@ -672,7 +672,7 @@ class OutletLaporanService
         return $accountName ?: ($shiftName ?: '-');
     }
 
-    protected function bonTotal(Carbon $start, Carbon $end, ?int $outletId, ?int $cashierId): float
+    public function bonTotal(Carbon $start, Carbon $end, ?int $outletId, ?int $cashierId): float
     {
         return (float) CashierDrawerEntry::query()
             ->whereIn('type', ['bon', 'cash_out'])
@@ -682,7 +682,7 @@ class OutletLaporanService
             ->sum('amount');
     }
 
-    protected function setoranTotal(Carbon $start, Carbon $end, ?int $outletId, ?int $cashierId): float
+    public function setoranTotal(Carbon $start, Carbon $end, ?int $outletId, ?int $cashierId): float
     {
         return (float) CashierSession::query()
             ->whereNotNull('cash_removed')

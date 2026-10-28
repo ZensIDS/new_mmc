@@ -95,7 +95,7 @@ abstract class BaseReportExport implements FromCollection, WithHeadings, WithTit
     {
         $defaults = [
             'no' => 6, 'text' => 24, 'code' => 18, 'center' => 14, 'int' => 10,
-            'qty' => 10, 'dec' => 14, 'money' => 16, 'date' => 12, 'datetime' => 17,
+            'qty' => 10, 'dec' => 14, 'money' => 16, 'rupiah' => 18, 'date' => 12, 'datetime' => 17,
         ];
 
         return [
@@ -267,6 +267,7 @@ abstract class BaseReportExport implements FromCollection, WithHeadings, WithTit
             case 'qty':
             case 'dec':
             case 'money':
+            case 'rupiah':
                 return is_numeric($value) ? $value + 0 : (is_scalar($value) ? (string) $value : null);
 
             default:
@@ -283,6 +284,8 @@ abstract class BaseReportExport implements FromCollection, WithHeadings, WithTit
     protected function numberFormat(array $column, int $index): string
     {
         switch ($column['type']) {
+            case 'rupiah':
+                return '"Rp" #,##0;-"Rp" #,##0;"Rp" 0';
             case 'money':
             case 'int':
                 return '#,##0;-#,##0;0';
@@ -421,7 +424,7 @@ abstract class BaseReportExport implements FromCollection, WithHeadings, WithTit
 
             if (in_array($type, ['no', 'center', 'date', 'datetime'], true)) {
                 $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            } elseif (in_array($type, ['int', 'qty', 'dec', 'money'], true)) {
+            } elseif (in_array($type, ['int', 'qty', 'dec', 'money', 'rupiah'], true)) {
                 $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
             } else {
                 $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);

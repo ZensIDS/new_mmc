@@ -62,6 +62,12 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
     Route::get('/get-customer/{penjualan_id}', [CustomerController::class, 'getCustomer']);
     Route::get('/get-penjualan/{outlet_id}', [PenjualanController::class, 'getPenjualan']);
     Route::get('/penjualan-detail/{penjualan_id}/items', [PenjualanController::class, 'getItems']);
+    // Halaman /penjualan (Tahap 2): rute statis harus didaftarkan SEBELUM resource,
+    // supaya "data", "summary", "rekap" tidak dianggap sebagai {penjualan}.
+    Route::get('/penjualan/data', [PenjualanController::class, 'data'])->name('penjualan.data');
+    Route::get('/penjualan/summary', [PenjualanController::class, 'summary'])->name('penjualan.summary');
+    Route::get('/penjualan/rekap', [PenjualanController::class, 'rekap'])->name('penjualan.rekap');
+    Route::get('/penjualan/{penjualan}/detail', [PenjualanController::class, 'detail'])->name('penjualan.detail');
     Route::resource('/penjualan', PenjualanController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
     Route::get('/penjualan/{penjualan}/print', [PenjualanController::class, 'print'])->name('penjualan.print');
     Route::get('/refundPenjualan/invoices', [RefundPenjualanController::class, 'invoices'])->name('refundPenjualan.invoices');

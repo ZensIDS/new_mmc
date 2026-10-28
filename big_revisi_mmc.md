@@ -1,6 +1,6 @@
 # BIG REVISI MMC — Analisa, Rekomendasi & Todolist
 
-> Status: **DRAFT ANALISA v0.7** — belum ada kode yang diubah. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
+> Status: **DRAFT ANALISA v0.8** — belum ada kode yang diubah. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
 > v0.2 sudah diperiksa terhadap kode lengkap (`Archive.zip`: app/, routes, views, migrations). Isi v0.1 yang meleset sudah dikoreksi.
 
 ## CARA KERJA (disepakati)
@@ -311,7 +311,7 @@ Tiap poin ada **default usulanku**; balas "ikut rekomendasi" bila setuju semua.
 | Kode | Keputusan |
 |------|-----------|
 | K25 | Batas rentang tanggal di modal laporan dibuat **longgar: 366 hari** (bukan 92) agar preset "Tahun Ini" dan laporan tahunan yang sekarang dipakai tidak terblokir di produksi. Diperketat per laporan lewat `max_days` di `config/laporan.php` setelah Excel ringan + antrean (Tahap 5). |
-| K26 | Export lama **di luar katalog** (Penjualan umum/kasir/supplier, Pembelian, Pembelian-Supplier, Pengeluaran, Laba Rugi, Products, Suppliers, Categories) masih polos dan tidak tampil di menu Laporan. Usulan: **dibiarkan dulu**, dirapikan di akhir Tahap 5 bila memang masih dipakai dari halaman lain. | Mohon konfirmasi apakah ingin ikut dirapikan (dan mana yang dipakai). |
+| K26 | Export lama **di luar katalog** (Penjualan umum/kasir/supplier, Pembelian, Pembelian-Supplier, Pengeluaran, Laba Rugi, Products, Suppliers, Categories) masih polos dan tidak tampil di menu Laporan. **Keputusan (2026-10-26): dibiarkan, tidak ikut dirapikan** — item 5.8b dihapus dari todolist. |
 | K26 | Tombol PDF disembunyikan lewat `LAPORAN_SHOW_PDF` (default `false`). **Rute PDF tidak dihapus dan tidak diblokir** — hanya tombolnya yang hilang (sesuai K12). |
 | K27 | Hak akses kartu laporan **sama seperti sebelumnya** (daftar role per laporan dipindah ke `config/laporan.php`); role `admin` sudah disertakan di samping `superadmin`. Menu Laporan di sidebar tampil untuk role yang punya ≥1 laporan (kasir tetap tidak melihat). |
 
@@ -360,14 +360,14 @@ Aturan kerja (sama seperti revisi sebelumnya): tiap tahap kirim **hanya file yan
 - [x] 1.8 **Index tampil modern:** hero bergradien + pencarian besar, tab kategori berbentuk pill dengan ikon & jumlah, grid kartu (CSS grid) dengan ikon gradien per kategori, efek hover, animasi muncul, responsif mobile; modal laporan ikut bergaya (header gradien sesuai kategori). Berlaku untuk Laporan Gudang & Outlet sekaligus — menunggu dicek
 
 ### TAHAP 2 — Halaman Penjualan (item 3)
-- [ ] 2.1 `PenjualanFilter` (satu definisi filter) + endpoint `penjualan/data` server-side
-- [ ] 2.2 View index baru: filter bar advance (preset + custom + outlet/kasir/shift/metode/status), default hari ini
-- [ ] 2.3 Kartu ringkasan sesuai filter
-- [ ] 2.4 DataTable rapi + child-row detail item (pakai `penjualan-detail/{id}/items`)
-- [ ] 2.5 Hapus tombol "Lihat Stock Toko"
-- [ ] 2.6 Tombol Cetak Rekap (Ringkas/Detail) memakai filter aktif
-- [ ] 2.7 Paksa batasan outlet di server untuk staff-outlet/kasir (`OutletAccess`) pada tabel, kartu ringkasan, cetak rekap, serta rute JSON `getPenjualan`/`getItems` (K16)
-- [ ] 2.8 Uji: data besar, lintas tengah malam, retur tidak terhitung
+- [x] 2.1 `App\Support\PenjualanFilter` (satu definisi filter: periode, outlet, kasir, metode bayar, status, pencarian; dipakai tabel, kartu ringkasan, dan Cetak Rekap) + endpoint server-side `GET /penjualan/data` — menunggu dicek
+- [x] 2.2 View index baru: filter bar (preset **Hari ini = default**, Kemarin, 7/30 hari, Bulan ini/lalu, Pilih tanggal) + **Filter Lanjutan** (outlet, kasir, metode, status) + pencarian invoice/kasir/customer/produk; filter tersimpan di URL (bisa di-bookmark). **Filter shift tidak dibuat** (K10: tidak diperlukan) — menunggu dicek
+- [x] 2.3 Kartu ringkasan (tampilan kartu dipoles modern: ikon, kartu Grand Total bergradien, chip metode bayar, efek loading) mengikuti filter (`GET /penjualan/summary`, satu query agregat): jumlah transaksi, total penjualan, diskon+promo+voucher, grand total, rincian per metode bayar, dan baris info retur/ganti barang. **Grand Total = nilai nota sebelum retur**; retur ditampilkan terpisah, tidak dicampur diam-diam — menunggu dicek
+- [x] 2.4 DataTable server-side (25/50/100 per halaman) dengan kolom Tanggal, Invoice, **Customer**, Shift, Item, Metode, Grand Total, Aksi (**kolom Outlet, Kasir, Status dihilangkan** — revisi 2026-10-26); detail item = baris yang bisa di-expand (`GET /penjualan/{id}/detail`; daftar retur tetap tampil di detail) — menunggu dicek
+- [x] 2.5 Tombol "Lihat Stock Toko" dihapus
+- [x] 2.6 Tombol **Download Rekap** (hijau, di samping Retur/Ganti Barang) — **Excel, bukan PDF** (PDF memicu ERR_EMPTY_RESPONSE): 2 sheet, `Ringkasan` (total, per metode, per kasir = dikelompokkan per nama shift, retur, bon, setoran; bagian per outlet dihapus; kolom Nilai bertipe Rupiah, kosong diisi Rp 0) dan `Transaksi` (satu baris per nota, TOTAL berumus); memakai filter aktif, maks. 50.000 nota; `GET /penjualan/rekap` — menunggu dicek
+- [x] 2.7 Batasan outlet dipaksa di server untuk `staff-outlet`/`kasir` (K16): tabel, kartu ringkasan, cetak rekap, `getPenjualan`, `getItems`, serta `show`, `print`, `destroy`, dan `detail` (403 bila nota milik outlet lain) — menunggu dicek
+- [~] 2.8 Uji: **belum bisa dijalankan di sini** (tidak ada PHP/database di lingkungan kerja ini). Checklist uji ada di Log Progres; perlu dijalankan di lokal/staging sebelum rilis (data besar, lintas tengah malam, nota dengan retur)
 
 ### TAHAP 3 — Dashboard (item 1)
 - [ ] 3.1 `DashboardSalesService` (agregat SQL, aturan retur, cache pendek)
@@ -416,7 +416,7 @@ Aturan kerja (sama seperti revisi sebelumnya): tiap tahap kirim **hanya file yan
 ### TAHAP 5 — Excel formal & ringan (item 5) — **semua export gudang DAN toko** (K13)
 **Dimulai setelah Tahap 1 (termasuk 1.7–1.8) dicek.** Urutan pengerjaan: 5.1 → 5.1b → 5.2 (kerangka) dulu, lalu migrasi per kelompok laporan (5.4–5.8), satu kelompok satu pengiriman.
 Acuan: `todolist_export_gudang.md` & `todolist_export_toko.md` (belum pernah dikerjakan di kode ini). Identitas header diambil dari menu Setting (K21). Index laporan Gudang & Outlet dibuat semenarik dan serapi mungkin (digarap di Tahap 1.3, dipakai ulang di sini).
-- [x] 5.1 Audit export: katalog Laporan hanya memuat **19 laporan** (14 gudang, 5 outlet). Export lama di luar katalog (`PenjualanExport`, `PenjualanKasirExport`, `PenjualanSupplierExport`, `PembelianExport`, `PembelianSupplierExport`, `PengeluaranExport`, `LabaRugiExport`, `ProductsExport`, dll.) tidak tampil di menu Laporan → ditangani belakangan (lihat K26). Status per laporan di tabel **5.1c**
+- [x] 5.1 Audit export: katalog Laporan hanya memuat **19 laporan** (14 gudang, 5 outlet). Export lama di luar katalog (`PenjualanExport`, `PenjualanKasirExport`, `PenjualanSupplierExport`, `PembelianExport`, `PembelianSupplierExport`, `PengeluaranExport`, `LabaRugiExport`, `ProductsExport`, dll.) tidak tampil di menu Laporan → **tidak dikerjakan** (keputusan K26; item 5.8b dihapus dari todolist). Status per laporan di tabel **5.1c**
 - [x] 5.1b `App\Support\ReportIdentity`: baca `settings.json` (name, address, telp, email, website, logo) dengan fallback bila kosong/logo hilang — menunggu dicek
 - [x] 5.2 `App\Exports\Support\BaseReportExport` (kerangka 1 sheet: logo + identitas, judul, periode, filter, dicetak oleh; header biru `#4472C4`; angka & tanggal asli; format `#,##0`; zebra; freeze pane; autofilter; baris TOTAL berumus `SUBTOTAL`; kolom kode/barcode dipaksa teks; print A4 landscape fit-to-width, ulang header, nomor halaman) + `TableReportSheet` (sheet generik: judul + kolom + sumber baris) — menunggu dicek
 - [~] 5.3 Pola query ringan: filter tanggal memakai `ReportQuery::betweenDates` (sudah ada); dikerjakan **per laporan saat dimigrasi** (join/select kolom, bukan `whereDate` + `->get()` model penuh). Untuk Penjualan Outlet, query tetap di `OutletLaporanService::sales()` (memuat aturan retur) supaya angkanya sama persis — optimasi query-nya ditunda ke 5.10 setelah dibandingkan sebelum/sesudah
@@ -431,7 +431,6 @@ Acuan: `todolist_export_gudang.md` & `todolist_export_toko.md` (belum pernah dik
   - Export Outlet FromView (All Stock, Minimal Stock, Rafaksi, Retur) tidak lagi memakai rowspan → satu baris penuh per data, bisa difilter/pivot. View Blade lamanya (`exports/outlet/*.blade.php`) **tidak dihapus** (tidak terpakai Excel lagi, aman dibersihkan nanti).
   - Perbaikan kecil: kolom **Expired** di Laporan Penerimaan Barang sebelumnya membaca `expired_date` (kolom tidak ada di model `Stock`, selalu kosong) → kini membaca `expired_at`.
   - Nama file seragam, mis. `Laporan-PO_20261001-20261026.xlsx`, `Laporan-Stok-Gudang_20261026.xlsx`.
-- [ ] 5.8b *(opsional, menunggu keputusan K26)* styling export di luar katalog: `Laba Rugi`, `Pengeluaran`, `Pembelian`, `Pembelian Supplier`, `Penjualan (umum/kasir/supplier)`, `Products/Suppliers/Categories`
 
 **5.1c Status 19 laporan di katalog (per 2026-10-26)**
 
@@ -533,6 +532,8 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 - v0.6 — Tahap 5 dimulai: kerangka Excel (`ReportIdentity`, `BaseReportExport`, `TableReportSheet`) + migrasi Penjualan Outlet. Audit 5.1 memperkecil cakupan: katalog hanya 19 laporan; export lama di luar katalog jadi K26.
 - v0.7 — Tahap 5 dilanjutkan, **fokus styling saja**: semua laporan di katalog selain Penjualan Outlet (17 laporan; Stock Opname tidak diubah karena sudah formal) memakai kerangka `BaseReportExport`. Migrasi query/antrean (5.3, 5.9, 5.10) sengaja ditunda.
 
+- v0.8 — Item 5.8b (styling export di luar katalog) **dihapus** dari todolist (K26: tidak dikerjakan). Tahap 2 (Halaman Penjualan) dikerjakan: 2.1–2.7 selesai, 2.8 menunggu uji.
+
 ---
 
 ## 9. Log progres (di-update tiap tahap selesai)
@@ -547,3 +548,17 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 | 2026-10-26 | Tahap 1 (1.7 bug tab, 1.8 index modern) | Menunggu dicek | `resources/views/laporan/_scripts.blade.php`, `_styles.blade.php`, `_index-layout.blade.php`, `resources/views/components/report-modal.blade.php`, `app/Support/LaporanCatalog.php`, `big_revisi_mmc.md` |
 | 2026-10-26 | Tahap 5 (5.1, 5.1b, 5.2, 5.3 sebagian, 5.4) | Menunggu dicek | `app/Support/ReportIdentity.php`, `app/Exports/Support/BaseReportExport.php`, `app/Exports/Support/TableReportSheet.php`, `app/Exports/OutletPenjualanExport.php`, `app/Http/Controllers/LaporanController.php`, `big_revisi_mmc.md` |
 | 2026-10-26 | Tahap 5 (5.5–5.8 styling Excel, tanpa ubah query) | Menunggu dicek | `app/Exports/Support/ReportHelpers.php`, `app/Exports/Support/RequestReportExport.php`, `app/Exports/LaporanPOExport.php`, `LaporanPRExport.php`, `LaporanPembelianBarangExport.php`, `LaporanPenerimaanBarangExport.php`, `LaporanBarangMasukExport.php`, `LaporanBarangKeluarExport.php`, `LaporanPengirimanExport.php`, `LaporanPickingPackingExport.php`, `LaporanAktifitasExport.php`, `LaporanPergerakanExport.php`, `StockExport.php`, `OutletAllStockExport.php`, `OutletMinimalStockExport.php`, `OutletRafaksiExport.php`, `OutletReturExport.php`, `ReturSupplierExport.php`, `ReturOutletExport.php`, `app/Http/Controllers/LaporanController.php`, `big_revisi_mmc.md` |
+| 2026-10-26 | Tahap 2 (2.1–2.7 Halaman Penjualan; 5.8b dihapus) | Menunggu dicek (2.8 perlu diuji) | `app/Support/PenjualanFilter.php` (baru), `app/Http/Controllers/PenjualanController.php`, `app/Services/OutletLaporanService.php` (hanya `bonTotal`/`setoranTotal` jadi `public`), `resources/views/penjualan/index.blade.php`, `resources/views/penjualan/_detail.blade.php` (baru), `resources/views/penjualan/rekap-pdf.blade.php` (baru), `routes/web.php`, `big_revisi_mmc.md` |
+
+| 2026-10-26 | Tahap 2 revisi (kartu modern, kolom Customer, rekap Excel) | Menunggu dicek | `app/Exports/PenjualanRekapExport.php` (baru), `app/Http/Controllers/PenjualanController.php`, `resources/views/penjualan/index.blade.php`, `app/Exports/Support/BaseReportExport.php` (tipe kolom `rupiah` baru), `app/Support/PenjualanFilter.php` (breakdown per shift); **hapus** `resources/views/penjualan/rekap-pdf.blade.php` (tidak dipakai lagi), `big_revisi_mmc.md` |
+
+**Checklist uji Tahap 2 (2.8)** — jalankan di lokal/staging dulu:
+1. Buka `/penjualan` tanpa parameter → hanya nota **hari ini** (Asia/Jakarta); URL tetap bersih. Ganti preset → tabel, kartu, dan URL ikut berubah; salin URL ke tab baru → filter sama.
+2. Pilih "Pilih tanggal" melewati tengah malam (mis. kemarin 22:00 s/d hari ini 02:00 → pakai tanggal kemarin s/d hari ini) → nota jam 23:59 dan 00:01 masuk ke tanggal masing-masing.
+3. Bandingkan **jumlah transaksi** & **Grand Total** kartu dengan jumlah baris/total tabel pada filter yang sama (outlet, kasir, metode, status, pencarian).
+4. Nota yang pernah diretur: badge "Ada retur", filter Status "Ada retur" hanya menampilkan nota tsb, baris info retur di bawah kartu muncul, detail expand menampilkan daftar retur.
+5. Login sebagai `staff-outlet`/`kasir`: dropdown outlet terkunci; coba `?outlet_id=<outlet lain>` di URL, `/penjualan/data`, `/penjualan/summary`, `/penjualan/rekap`, `/penjualan/<id nota outlet lain>`, `/penjualan/<id>/print`, `/get-penjualan/<outlet lain>` → semua harus 403 / tetap outlet sendiri.
+6. Download Rekap dengan filter aktif → file `.xlsx` terunduh (tanpa tab kosong), 2 sheet rapi; rentang sangat panjang (>50.000 nota) menampilkan pesan batas.
+7. Bandingkan Rekap Ringkas dengan **Laporan Penjualan Outlet** untuk periode/outlet yang sama: bon & setoran harus sama persis; total penjualan bisa berbeda **hanya** pada nota yang diretur (laporan mengurangi retur per item, halaman ini menampilkan nilai nota + retur terpisah).
+8. Data besar: uji dengan rentang 30 hari / setahun → tabel tetap cepat (butuh index `penjualans(created_at)` dari 0.3 sudah dijalankan).
+9. Alur retur (`/refundPenjualan/create`) tetap bisa memilih outlet → nota → item (memakai `getPenjualan`/`getItems`).
