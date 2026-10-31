@@ -9,7 +9,7 @@ class VoucherRequest extends FormRequest
 {
     public function authorize()
     {
-        return in_array($this->user()?->role, ['superadmin', 'admin-gudang', 'owner'], true);
+        return (bool) $this->user()?->canAccess('admin-gudang', 'owner');
     }
 
     public function rules()

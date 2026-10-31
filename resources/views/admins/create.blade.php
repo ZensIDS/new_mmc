@@ -73,7 +73,7 @@
                                     <option value="" selected disabled>Pilih Role</option>
                                     @foreach ($roles as $role)
                                         <option value="{{ $role }}" {{ old('role') == $role ? 'selected' : '' }}>
-                                            {{ $role }}
+                                            {{ $roleLabels[$role] ?? $role }}
                                         </option>
                                     @endforeach
                                 </select>

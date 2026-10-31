@@ -11,6 +11,7 @@ use App\Models\Voucher;
 use App\Services\CashierSaleService;
 use App\Exports\PenjualanRekapExport;
 use App\Services\OutletLaporanService;
+use App\Services\SaleDeletionService;
 use App\Support\OutletAccess;
 use App\Support\PenjualanFilter;
 use Maatwebsite\Excel\Facades\Excel;
@@ -63,7 +64,7 @@ class PenjualanController extends Controller
     public function marketplace()
     {
         return view('penjualan.marketplace', [
-            'penjualan' => Penjualan::has('transaction')->orderBy('created_at', 'desc')->get(),
+            'penjualan' => Penjualan::has('transaction')->whereNull('outlet_id')->orderBy('created_at', 'desc')->get(),
         ]);
     }
 
@@ -142,17 +143,22 @@ class PenjualanController extends Controller
             ->sortBy(fn ($p) => array_search($p->id, $pageIds))
             ->values();
 
-        $data = $rows->map(function (Penjualan $p) {
+        // Tombol Hapus: superadmin langsung, admin -> permintaan hapus (modal alasan oleh
+        // layouts/_deletion-guard). Role operasional tidak melihat tombol (server juga menolak, 4C.0).
+        $me = auth()->user();
+        $canDelete = (bool) ($me && ($me->canDeleteDirectly() || $me->mustRequestDeletion()));
+
+        $data = $rows->map(function (Penjualan $p) use ($canDelete) {
             $grand = $p->grand_total ?? ((float) $p->total - (float) $p->discount);
 
-            // Tombol Hapus mengikuti aturan role baru di Tahap 4 (superadmin langsung,
-            // admin -> pending). Untuk saat ini perilakunya sama seperti halaman lama.
             $aksi = '<a class="btn btn-xs btn-info" href="'.e(route('penjualan.show', $p->id)).'"><i class="fa fa-eye"></i> Show</a> '
-                .'<a class="btn btn-xs btn-warning" href="'.e(route('penjualan.print', $p->id)).'"><i class="fa fa-print"></i> Re-Print</a> '
-                .'<form action="'.e(route('penjualan.destroy', $p->id)).'" method="post" style="display:inline;">'
-                .csrf_field().method_field('delete')
-                .'<button type="submit" class="btn btn-xs btn-danger" onclick="return confirm(\'Yakin hapus penjualan ini?\')"><i class="fa fa-trash"></i> Hapus</button>'
-                .'</form>';
+                .'<a class="btn btn-xs btn-warning" href="'.e(route('penjualan.print', $p->id)).'"><i class="fa fa-print"></i> Re-Print</a>';
+            if ($canDelete) {
+                $aksi .= ' <form action="'.e(route('penjualan.destroy', $p->id)).'" method="post" style="display:inline;" data-delete-label="penjualan '.e($p->code).'">'
+                    .csrf_field().method_field('delete')
+                    .'<button type="submit" class="btn btn-xs btn-danger"><i class="fa fa-trash"></i> Hapus</button>'
+                    .'</form>';
+            }
 
             return [
                 'id'          => $p->id,
@@ -229,7 +235,9 @@ class PenjualanController extends Controller
 
     public function create()
     {
-        if (auth()->user()->role == 'kasir' | auth()->user()->role == 'admin'){
+        // Hanya kasir yang terikat ke satu outlet. Admin/superadmin (pusat) tidak punya
+        // outlet sendiri, jadi tidak boleh di-redirect ke outlet kosong.
+        if (auth()->user()->role === 'kasir' && auth()->user()->outlet_id) {
             return redirect()->route('outlet.show', auth()->user()->outlet_id);
         }
 
@@ -316,12 +324,24 @@ class PenjualanController extends Controller
     //     return redirect(route('penjualan.index'))->with('toast_success', 'Berhasil Menyimpan Data!');
     // }
 
-    public function destroy(Penjualan $penjualan)
+    /**
+     * Hapus penjualan = soft delete + koreksi stok outlet + hitung ulang closing kasir
+     * (Tahap 4C.0, K18/K19/K22). Hanya superadmin yang boleh menghapus langsung; admin lewat
+     * permintaan hapus (deletion.guard) dan dieksekusi memakai method ini oleh superadmin.
+     * Role operasional (kasir/staff-outlet/owner/admin-gudang) ditolak di server.
+     */
+    public function destroy(Penjualan $penjualan, SaleDeletionService $deletion)
     {
+        abort_unless(auth()->user()?->canDeleteDirectly(), 403, 'Hapus penjualan hanya lewat persetujuan superadmin.');
         $this->authorizeOutlet($penjualan->outlet_id);
 
-        $penjualan->delete();
+        try {
+            $deletion->delete($penjualan, auth()->user());
+        } catch (RuntimeException $e) {
+            return redirect()->route('penjualan.index')->with('toast_error', $e->getMessage());
+        }
 
-        return redirect(route('penjualan.index'))->with('toast_success', 'Berhasil Menghapus Data!');
+        return redirect(route('penjualan.index'))
+            ->with('toast_success', 'Penjualan dihapus, stok dikembalikan dan closing kasir dihitung ulang.');
     }
 }

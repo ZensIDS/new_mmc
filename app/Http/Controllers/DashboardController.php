@@ -30,7 +30,7 @@ class DashboardController extends Controller
         // K8: dashboard penjualan untuk semua role kecuali admin-gudang.
         // K23: staff-outlet & kasir hanya melihat outlet sendiri (dipaksa di server).
         $showSales  = in_array($user->role, config('roles.sales_dashboard', []), true);
-        $showGudang = in_array($user->role, ['superadmin', 'admin', 'owner', 'admin-gudang'], true);
+        $showGudang = $user->canAccess('owner', 'admin-gudang');
 
         $salesOptions = [
             'showSales'    => $showSales,
@@ -283,7 +283,7 @@ class DashboardController extends Controller
             'website' => 'nullable|url',
             'logo'    => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
-        if (auth()->user()?->role === 'superadmin') {
+        if (auth()->user()?->hasFullAccess()) {
             $rules['return_pin'] = 'nullable|digits_between:4,8';
         }
 
@@ -302,7 +302,7 @@ class DashboardController extends Controller
             'website' => $request->website,
         ]);
 
-        if (auth()->user()?->role === 'superadmin' && $request->filled('return_pin')) {
+        if (auth()->user()?->hasFullAccess() && $request->filled('return_pin')) {
             $data['return_pin_hash'] = Hash::make((string) $request->input('return_pin'));
         }
         unset($data['return_pin']);

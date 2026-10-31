@@ -118,6 +118,41 @@ class User extends Authenticatable
         return $this->isAdmin();
     }
 
+    /**
+     * Boleh mengakses fitur yang diperuntukkan bagi role tertentu.
+     * Akses penuh (superadmin & admin) selalu lolos; role lain harus ada di daftar.
+     * Dipakai di Blade/controller sebagai pengganti in_array($role, ['superadmin', ...]).
+     */
+    public function canAccess(string|array ...$roles): bool
+    {
+        return $this->hasFullAccess() || $this->hasRole(...$roles);
+    }
+
+    /** Daftar role yang boleh DIBERIKAN user ini lewat menu kelola user. */
+    public function assignableRoles(): array
+    {
+        if ($this->isSuperadmin()) {
+            return array_values(array_diff(config('roles.all', []), ['customer']));
+        }
+
+        if ($this->isAdmin()) {
+            return config('roles.manageable_by_admin', []);
+        }
+
+        return [];
+    }
+
+    /** Boleh membuat/mengubah/menghapus akun $target lewat menu kelola user. */
+    public function canManageUser(self $target): bool
+    {
+        if ($this->isSuperadmin()) {
+            return true;
+        }
+
+        // Admin tidak boleh menyentuh akun superadmin (cegah naik jabatan).
+        return $this->isAdmin() && in_array($target->role, config('roles.manageable_by_admin', []), true);
+    }
+
     public function roleLabel(): string
     {
         return config('roles.labels.'.$this->role, ucfirst((string) $this->role));

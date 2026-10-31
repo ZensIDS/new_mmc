@@ -185,11 +185,16 @@ $(function () {
         var invalid = validate($modal);
         if (invalid) { showError($modal, invalid); return; }
 
-        var url = buildUrl($btn.data('url'), collectParams($modal));
+        var params = collectParams($modal);
+        var url = buildUrl($btn.data('url'), params);
 
         // Browser lama tanpa fetch: unduh biasa.
         if (!window.fetch) { window.location.href = url; return; }
 
+        directDownload($modal, $btn, url);
+    });
+
+    function directDownload($modal, $btn, url) {
         setLoading($modal, true);
 
         window.fetch(url, {
@@ -209,7 +214,7 @@ $(function () {
             setLoading($modal, false);
             showError($modal, errorMessage(err && err.status));
         });
-    });
+    }
 
     /* ---------- Preview PDF (hanya muncul jika LAPORAN_SHOW_PDF=true) ---------- */
     $(document).on('click', '.rpt-pdf', function () {

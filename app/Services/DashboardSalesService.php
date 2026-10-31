@@ -151,6 +151,8 @@ class DashboardSalesService
             ->where('refund_penjualans.created_at', '>=', $start)
             ->where('refund_penjualans.created_at', '<=', $end)
             ->where('refund_penjualans.replacement_total', '>', 0)
+            // Tahap 4C.0: retur atas nota yang sudah dihapus tidak dihitung.
+            ->where(fn ($q) => $q->whereNull('penjualans.id')->orWhereNull('penjualans.deleted_at'))
             ->when($outletId, fn ($q) => $q->where('refund_penjualans.outlet_id', $outletId));
     }
 

@@ -212,6 +212,9 @@
         });
     </script>
     @yield('page-script')
+    @auth
+        @include('layouts._deletion-guard')
+    @endauth
 </body>
 
 </html>

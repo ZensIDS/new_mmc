@@ -19,11 +19,14 @@
                 </div>
             </div>
 
-            <div class="p-4 bg-white shadow sm:p-8 sm:rounded-lg">
-                <div class="max-w-xl">
-                    @include('profile.partials.delete-user-form')
+            {{-- Tahap 4C.5: admin (pusat) tidak boleh menghapus akunnya sendiri (server juga menolak: profile.destroy 403). --}}
+            @unless (auth()->user()->mustRequestDeletion())
+                <div class="p-4 bg-white shadow sm:p-8 sm:rounded-lg">
+                    <div class="max-w-xl">
+                        @include('profile.partials.delete-user-form')
+                    </div>
                 </div>
-            </div>
+            @endunless
         </div>
     </div>
 </x-app-layout>

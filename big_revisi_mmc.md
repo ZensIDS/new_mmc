@@ -1,6 +1,6 @@
 # BIG REVISI MMC — Analisa, Rekomendasi & Todolist
 
-> Status: **DRAFT ANALISA v0.9** — belum ada kode yang diubah. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
+> Status: **v1.4 — Tahap 0–3, 4A–4C, dan Tahap 5 (5.1–5.8) dikerjakan; 5.9 & 5.10 DIBATALKAN (menunggu dicek & uji 4D)**. Semua keputusan K1–K24 sudah dijawab; tidak ada pertanyaan terbuka. **Aplikasi sudah PRODUKSI — lihat aturan keselamatan di Bagian 3C.**
 > v0.2 sudah diperiksa terhadap kode lengkap (`Archive.zip`: app/, routes, views, migrations). Isi v0.1 yang meleset sudah dikoreksi.
 
 ## CARA KERJA (disepakati)
@@ -380,37 +380,37 @@ Aturan kerja (sama seperti revisi sebelumnya): tiap tahap kirim **hanya file yan
 
 ### TAHAP 4 — Role Admin + Hapus Pending (item 2)
 **4A. Role**
-- [ ] 4A.1 Ganti semua cek role Blade & routes ke helper (43 titik + middleware)
-- [ ] 4A.2 `AdminController` + `AdminRequest`: tambah role `admin` ke daftar; daftar role yang diizinkan (allow-list) di validasi; ganti `$request->all()` di `update()` dengan data tervalidasi; admin tidak boleh membuat/mengubah/menghapus akun superadmin atau menaikkan role; hapus `dd()` di `show()`
-- [ ] 4A.2b Perbaiki `PenjualanController@create` (cek legacy `'kasir' | 'admin'`) agar admin pusat tidak ter-redirect ke outlet kosong
-- [ ] 4A.2c `RoleMiddleware`: tambah `admin` ke `homeRoutes`
-- [ ] 4A.3 Sidebar/menu untuk admin = superadmin
+- [x] 4A.1 Cek role Blade & routes dialihkan ke helper `User::canAccess()` / `hasFullAccess()` (sidebar 21 titik, 4 Controller + 4 FormRequest akses master harga/voucher/promo/campaign, `OutletPurchaseController`, `Pembelian::canBeEditedBy`, ACC owner PO, `owner-stocks`, `pembelians/edit`, `dashboard/setting`, PIN retur, `ProductController`, `DashboardController`). Semua string `role:` di `routes/web.php` kini memuat `admin` di samping `superadmin`. **Hasil untuk role lama tidak berubah**; `admin` = `superadmin` — menunggu dicek
+- [x] 4A.2 `AdminController` + `AdminRequest`: role `admin` ada di dropdown (label "Admin (Pusat)"); validasi role pakai allow-list (`User::assignableRoles()`); `update()` memakai data tervalidasi (bukan `$request->all()`); admin tidak bisa membuat/mengubah/menghapus akun superadmin atau menaikkan role (dicek di server: 403) dan akun superadmin disembunyikan dari daftar admin; `dd()` di `show()` diganti redirect; akun yang sedang login tidak bisa menghapus dirinya sendiri; `outlet_id` wajib untuk staff-outlet/admin-gudang juga saat **buat** akun (sebelumnya hanya saat edit) — menunggu dicek
+- [x] 4A.2b `PenjualanController@create`: cek legacy `'kasir' | 'admin'` diganti — hanya `kasir` yang punya outlet yang di-redirect; admin pusat membuka halaman pilih outlet — menunggu dicek
+- [x] 4A.2c `RoleMiddleware`: `admin` dan `kasir` ditambah ke `homeRoutes` (sebelumnya kasir yang gagal akses jatuh ke `login`) — menunggu dicek
+- [x] 4A.3 Sidebar/menu untuk admin = superadmin (Setting, User > Admin, Outlet, Customer, Payment Method, semua menu gudang/toko/laporan) — menunggu dicek. *Penyesuaian hide tombol Hapus + "Permintaan Hapus" menyusul di 4B.4–4B.6.*
 **4B. Infrastruktur approval**
-- [ ] 4B.0 Aturan: **semua** rute hapus admin → pending, tanpa pengecualian (K17), termasuk `destroyItem`/`destroyNote` PO & RO, `cart.destroy`; yang bisa langsung hapus hanya superadmin
-- [ ] 4B.1 Migration + model `DeletionRequest` (status: pending/approved/rejected/failed — **tanpa `cancelled`**, K6)
-- [ ] 4B.2 `DeletionRequestService` (buat, setujui, tolak, eksekusi, log) — pembatalan hanya lewat **tolak oleh superadmin** (K6)
-- [ ] 4B.3 Middleware `deletion.guard` pada rute DELETE (allow-list model)
-- [ ] 4B.4 Komponen `<x-delete-button>` (modal alasan + badge "menunggu persetujuan"; admin **tidak** punya tombol batalkan)
-- [ ] 4B.5 Halaman superadmin **Permintaan Hapus** (tab, filter, detail snapshot, setujui/tolak, massal)
-- [ ] 4B.6 Badge sidebar + kartu dashboard superadmin
+- [x] 4B.0 Aturan (diterapkan di `deletion.guard`, lihat 4B.3): **semua** rute hapus admin → pending, tanpa pengecualian (K17), termasuk `destroyItem`/`destroyNote` PO & RO, `cart.destroy`; yang bisa langsung hapus hanya superadmin. *Role lain (kasir/staff-outlet/admin-gudang/owner) tidak dicegat guard — tetap diatur `role:` per rute; pembatasan hapus Penjualan untuk role operasional dikerjakan di 4C.* — menunggu dicek
+- [x] 4B.1 Migration `2026_10_28_000001_create_deletion_requests_table` (tabel baru saja, `pending_key` unique = satu target satu pending) + model `DeletionRequest` — **butuh backup + `php artisan migrate`** — menunggu dicek. Detail status: (status: pending/approved/rejected/failed — **tanpa `cancelled`**, K6)
+- [x] 4B.2 `DeletionRequestService` (eksekusi memanggil action `destroy` controller yang sama sebagai superadmin dalam satu transaksi; gagal → rollback + status `failed` + pesan; dicatat ke `activity_log`) — menunggu dicek. Detail: (buat, setujui, tolak, eksekusi, log) — pembatalan hanya lewat **tolak oleh superadmin** (K6)
+- [x] 4B.3 Middleware `deletion.guard` (alias di `Kernel`, dipasang otomatis ke semua rute DELETE + `cart.destroy` + `pembelian.stock.destroy` lewat loop di akhir `routes/web.php`; `profile.destroy` ditolak 403 untuk admin; config `config/deletion.php`) — menunggu dicek. Detail: pada rute DELETE (allow-list model)
+- [x] 4B.4 Komponen `<x-delete-button>` + skrip global `layouts/_deletion-guard` (dipasang di `layouts/master`): semua form DELETE untuk admin memunculkan modal alasan wajib; badge "Menunggu persetujuan hapus" via `GET /deletion-requests/pending-actions`; hapus AJAX yang dibalas pending memuat ulang halaman; admin tidak punya tombol batalkan. Nyalakan `DELETION_REQUIRE_REASON=true` di `.env` — menunggu dicek
+- [x] 4B.5 Halaman superadmin `/deletion-requests` (tab Menunggu/Disetujui/Ditolak/Gagal, filter modul/pemohon/tanggal, detail snapshot, peringatan data berubah/sudah hilang, setujui/tolak, setujui massal, coba lagi untuk yang gagal) — menunggu dicek. Detail: **Permintaan Hapus** (tab, filter, detail snapshot, setujui/tolak, massal)
+- [x] 4B.6 Badge sidebar "Permintaan Hapus" + kartu peringatan di dashboard (hanya superadmin) — menunggu dicek. Detail: + kartu dashboard superadmin
 **4C. Penerapan per modul** (ceklis per modul, uji hapus normal & pending)
-- [ ] 4C.0 **Koreksi stok saat hapus (K18–K20)** — satu `DeleteExecutor`/Action per modul, dipanggil sama oleh hapus langsung superadmin dan eksekusi ACC:
-  - [ ] Penjualan (soft delete tetap): kembalikan stok outlet per item lewat `OutletStockService` (memakai `stock_id`/`owner_stock_id` dari pivot item), catat pergerakan stok/kartu stok, dalam satu transaksi
-  - [ ] Penjualan yang sudah closing: **hitung ulang** kolom hasil sesi (K22) + catat nilai sebelum/sesudah di `activity_log`
-  - [ ] Pastikan semua laporan/rekap/dashboard mengecualikan penjualan terhapus (audit query mentah/join tanpa filter `deleted_at`)
-  - [ ] `PembelianController@destroy`: sekarang hanya `stocks()->delete()` tanpa koreksi → koreksi stok/batch & rekap
-  - [ ] `RefundController@destroy`: sekarang hanya `delete()` → koreksi stok sesuai jenis retur
-  - [ ] `RefundPembelianController@destroy`: dibiarkan (K20); catat bahwa koreksi hanya untuk tipe `gudang_ke_supplier`
-  - [ ] `StockController@destroy`: tidak diaktifkan (K20); `dd()` diganti penolakan aman, rute tidak dipasang tombol
-  - [ ] Hapus item PO/RO/draft (`destroyItem`): cek apakah menyentuh stok; bila ya, koreksi
-  - [ ] Uji di salinan data produksi dulu (3C-6)
-  - [ ] Tes: hapus lalu cek stok, kartu stok, laporan, dan rekap kembali tepat
-- [ ] 4C.1 Master: kategori, produk, supplier, customer, salesman, bank, kas, payment, outlet, slider, pengeluaran
-- [ ] 4C.2 Harga & promosi: outlet-prices, voucher, promotion
-- [ ] 4C.3 Transaksi: penjualan, pembelian/PO, request-orders, delivery-orders, picking-lists, retur (pembelian/penjualan/refund), stok
-- [ ] 4C.4 Ubah `GET /pembelian/{id}/destroy` → DELETE/POST
-- [ ] 4C.5 Sembunyikan "hapus akun" profil untuk admin
-**4D. Uji**
+- [x] 4C.0 **Koreksi stok saat hapus (K18–K20)** — menunggu dicek & uji di salinan data produksi:
+  - [x] Penjualan (soft delete tetap): `SaleDeletionService` — stok outlet per batch dikembalikan (`OutletStockService::restore`) + movement `in`; satu transaksi; aman bila dijalankan ulang
+  - [x] Penjualan sudah closing: `cash_sales`, `expected_cash`, `discrepancy` dihitung ulang, nilai sebelum/sesudah di `activity_log` (uang fisik closing tidak diubah)
+  - [x] Laporan/dashboard mengecualikan penjualan terhapus (audit; `DashboardSalesService::replacements()` diperbaiki)
+  - [x] `PembelianController@destroy`: tolak bila batch sudah dipakai; selain itu movement keluar, hapus stok & stock_pembelians, hitung ulang nilai stok. HPP tidak dibalik otomatis
+  - [x] `RefundController@destroy`: balik stok & kas (rute `refund.*` tidak terdaftar, jadi tidak terjangkau saat ini)
+  - [x] `RefundPembelianController@destroy`: dibiarkan (K20)
+  - [x] `StockController@show/destroy`: dinonaktifkan. **Temuan: `GET /stock/{stock}` dulu menghapus stok**
+  - [x] `destroyItem` PO/RO: tidak menyentuh stok (RO hanya boleh dihapus saat `pending`, sebelum reservasi); PO membersihkan stock_pembelians
+  - [x] Tambahan: produk/outlet tidak bisa dihapus bila masih ada stok outlet
+  - [x] Nota ber-retur/ganti barang: hapus ditolak otomatis (usul, belum disetujui)
+  - [ ] Uji di salinan data produksi (3C-6)
+- [x] 4C.1–4C.3 Dicakup guard global pada semua rute DELETE (admin → pending, superadmin → langsung). Perlu diuji per modul di 4D. Catatan: `delivery-orders`/`picking-lists` tidak punya method `destroy`
+- [x] 4B.7 Menu admin **Pengajuan Hapus Saya** (`/deletion-requests/mine`): tab Semua/Menunggu/Disetujui/Ditolak/Gagal, alasan sendiri, catatan & nama pereview, penyebab gagal; badge di sidebar — menunggu dicek
+- [x] 4C.4 `GET /pembelian/{id}/destroy` → DELETE (tidak ada view yang memakainya)
+- [x] 4C.5 Hapus akun profil disembunyikan untuk admin
+**4D. Uji** (belum bisa dijalankan di sini; butuh lokal/staging)
 - [ ] 4D.1 Skenario: admin ajukan → superadmin setujui → terhapus; tolak; batal; target berubah sebelum disetujui; request ganda ditolak; (pembatalan = tolak oleh superadmin); admin tembak endpoint DELETE langsung (harus tetap pending, bukan terhapus); hapus yang menyentuh stok → stok & rekap terkoreksi
 
 ### TAHAP 5 — Excel formal & ringan (item 5) — **semua export gudang DAN toko** (K13)
@@ -419,7 +419,7 @@ Acuan: `todolist_export_gudang.md` & `todolist_export_toko.md` (belum pernah dik
 - [x] 5.1 Audit export: katalog Laporan hanya memuat **19 laporan** (14 gudang, 5 outlet). Export lama di luar katalog (`PenjualanExport`, `PenjualanKasirExport`, `PenjualanSupplierExport`, `PembelianExport`, `PembelianSupplierExport`, `PengeluaranExport`, `LabaRugiExport`, `ProductsExport`, dll.) tidak tampil di menu Laporan → **tidak dikerjakan** (keputusan K26; item 5.8b dihapus dari todolist). Status per laporan di tabel **5.1c**
 - [x] 5.1b `App\Support\ReportIdentity`: baca `settings.json` (name, address, telp, email, website, logo) dengan fallback bila kosong/logo hilang — menunggu dicek
 - [x] 5.2 `App\Exports\Support\BaseReportExport` (kerangka 1 sheet: logo + identitas, judul, periode, filter, dicetak oleh; header biru `#4472C4`; angka & tanggal asli; format `#,##0`; zebra; freeze pane; autofilter; baris TOTAL berumus `SUBTOTAL`; kolom kode/barcode dipaksa teks; print A4 landscape fit-to-width, ulang header, nomor halaman) + `TableReportSheet` (sheet generik: judul + kolom + sumber baris) — menunggu dicek
-- [~] 5.3 Pola query ringan: filter tanggal memakai `ReportQuery::betweenDates` (sudah ada); dikerjakan **per laporan saat dimigrasi** (join/select kolom, bukan `whereDate` + `->get()` model penuh). Untuk Penjualan Outlet, query tetap di `OutletLaporanService::sales()` (memuat aturan retur) supaya angkanya sama persis — optimasi query-nya ditunda ke 5.10 setelah dibandingkan sebelum/sesudah
+- [-] 5.3 **Diabaikan atas keputusan user (2026-10-31)** — optimasi query laporan tidak dikerjakan; query tetap seperti sekarang. *(Catatan lama:)* Pola query ringan: filter tanggal memakai `ReportQuery::betweenDates` (sudah ada); dikerjakan **per laporan saat dimigrasi** (join/select kolom, bukan `whereDate` + `->get()` model penuh). Untuk Penjualan Outlet, query tetap di `OutletLaporanService::sales()` (memuat aturan retur) supaya angkanya sama persis — optimasi query-nya ditunda ke 5.10 setelah dibandingkan sebelum/sesudah
 - [x] 5.4 Migrasi **Penjualan Outlet** (satu-satunya laporan penjualan di katalog): 2 sheet — `Penjualan` (satu baris per item, tanpa rowspan agar bisa difilter/pivot, TOTAL Qty & Subtotal) dan `Rekap` (total, per metode bayar, bon, voucher, setoran, jumlah transaksi); nama file `Laporan-Penjualan-Outlet_YYYYMMDD-YYYYMMDD.xlsx` — menunggu dicek
 - [x] 5.5 **Styling Excel** laporan **Stok Gudang**, **Outlet: All Stock**, **Outlet: Minimal Stock** (Stock Opname sudah formal — tidak diubah, lihat 5.1c) — menunggu dicek
 - [x] 5.6 **Styling Excel** laporan **PO / Pembelian Barang / Penerimaan Barang / Barang Masuk / Barang Keluar** — menunggu dicek
@@ -458,8 +458,8 @@ Acuan: `todolist_export_gudang.md` & `todolist_export_toko.md` (belum pernah dik
 
 Catatan: nama kelompok 5.5–5.8 mengikuti isi laporan di katalog; pembagian di atas menggantikan perkiraan awal.
 
-- [ ] 5.9 *(ditunda ke sesi berikutnya)* Mekanisme antrean untuk rentang besar + notifikasi unduhan siap
-- [ ] 5.10 *(ditunda ke sesi berikutnya, bersama optimasi query semua laporan)* Uji beban (rentang panjang, data banyak), cek memori & waktu, bandingkan sebelum/sesudah
+- [-] 5.9 **Antrean unduhan laporan + notifikasi siap — DIBATALKAN atas keputusan user (2026-10-31)**: sistem skala kecil, tidak perlu antrean/worker. Semua laporan kembali **unduh langsung** (kode antrean, menu *Unduhan Saya*, notifikasi, dan konfigurasinya dihapus). Antrean `imports` (import produk) **tidak diubah**.
+- [-] 5.10 **Alat uji beban — DIBATALKAN** (ikut dihapus bersama 5.9; command `report-exports:benchmark` tidak ada lagi).
 
 ---
 
@@ -535,6 +535,12 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 - v0.8 — Item 5.8b (styling export di luar katalog) **dihapus** dari todolist (K26: tidak dikerjakan). Tahap 2 (Halaman Penjualan) dikerjakan: 2.1–2.7 selesai, 2.8 menunggu uji.
 
 - v0.9 — Tahap 3 (Dashboard) dikerjakan: 3.1–3.6 selesai, 3.7 menunggu uji dengan data nyata. Role `admin` belum bisa membuka `/dashboard` karena grup rute masih memakai daftar role lama — dibereskan di Tahap 4A.1/4A.2c.
+- v1.0 — Tahap 4A (Role Admin) dikerjakan: 4A.1–4A.3 selesai, menunggu dicek.
+- v1.1 — Tahap 4B dikerjakan kecuali 4B.4 (`<x-delete-button>` + alasan wajib, menunggu 4C karena menyentuh semua view). 4C (koreksi stok + penerapan per modul) belum dimulai.
+- v1.2 — Tahap 4C dikerjakan (4B.4, 4C.0–4C.5). 4D menunggu uji.
+- v1.3 — Menu **Pengajuan Hapus Saya** untuk admin (status, catatan penolakan, penyebab gagal).
+- v1.4 — Tahap 5.9 (antrean unduhan) dan 5.10 (alat uji beban) sempat dikerjakan; 5.3 diabaikan atas permintaan user.
+- v1.5 — 5.9 & 5.10 **dibatalkan & dihapus** (tidak perlu antrean). Perbaikan bug: nota penjualan non-tunai (QRIS/transfer) tidak muncul di daftar `/penjualan`.
 
 ---
 
@@ -554,6 +560,15 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 
 | 2026-10-26 | Tahap 2 revisi (kartu modern, kolom Customer, rekap Excel) | Menunggu dicek | `app/Exports/PenjualanRekapExport.php` (baru), `app/Http/Controllers/PenjualanController.php`, `resources/views/penjualan/index.blade.php`, `app/Exports/Support/BaseReportExport.php` (tipe kolom `rupiah` baru), `app/Support/PenjualanFilter.php` (breakdown per shift); **hapus** `resources/views/penjualan/rekap-pdf.blade.php` (tidak dipakai lagi), `big_revisi_mmc.md` |
 | 2026-10-28 | Tahap 3 (3.1–3.6 Dashboard penjualan; Min Stok pindah ke /product) | Menunggu dicek (3.7 perlu diuji) | `app/Services/DashboardSalesService.php` (baru), `app/Http/Controllers/DashboardController.php`, `app/Http/Controllers/ProductController.php`, `resources/views/dashboard/index.blade.php`, `_sales.blade.php` (baru), `_sales-script.blade.php` (baru), `_gudang.blade.php` (baru), `resources/views/products/index.blade.php`, `routes/web.php`, `big_revisi_mmc.md` |
+
+| 2026-10-28 | Tahap 4A (4A.1–4A.3 Role Admin) | Menunggu dicek | `app/Models/User.php`, `app/Http/Middleware/RoleMiddleware.php`, `routes/web.php`, `app/Http/Controllers/AdminController.php`, `app/Http/Requests/AdminRequest.php`, `resources/views/admins/index.blade.php`, `create.blade.php`, `edit.blade.php`, `resources/views/layouts/sidebar.blade.php`, `app/Http/Controllers/PenjualanController.php`, `DashboardController.php`, `PembelianController.php`, `ProductController.php`, `OutletPriceController.php`, `PromotionController.php`, `CampaignController.php`, `VoucherController.php`, `OutletPurchaseController.php`, `app/Http/Requests/PromotionRequest.php`, `VoucherRequest.php`, `OutletPriceRequest.php`, `CampaignRequest.php`, `app/Models/Pembelian.php`, `resources/views/pembelians/edit.blade.php`, `owner-stocks/index.blade.php`, `dashboard/setting.blade.php`, `big_revisi_mmc.md` |
+
+| 2026-10-28 | Tahap 4B (4B.0–4B.3, 4B.5, 4B.6; 4B.4 ditunda) | Menunggu dicek (butuh migrate) | `database/migrations/2026_10_28_000001_create_deletion_requests_table.php`, `config/deletion.php`, `app/Models/DeletionRequest.php`, `app/Services/DeletionRequestService.php`, `app/Http/Middleware/DeletionGuard.php`, `app/Http/Kernel.php`, `app/Http/Controllers/DeletionRequestController.php`, `resources/views/deletion-requests/index.blade.php`, `resources/views/layouts/sidebar.blade.php`, `resources/views/dashboard/index.blade.php`, `routes/web.php`, `big_revisi_mmc.md` |
+
+| 2026-10-31 | Tahap 4B.4 + 4C | Menunggu dicek & uji | `app/Services/SaleDeletionService.php` (baru), `OutletStockService.php`, `DashboardSalesService.php`, `app/Http/Controllers/PenjualanController.php`, `PembelianController.php`, `RefundController.php`, `StockController.php`, `ProductController.php`, `OutletController.php`, `DeletionRequestController.php`, `routes/web.php`, `resources/views/layouts/_deletion-guard.blade.php` (baru), `layouts/master.blade.php`, `components/delete-button.blade.php` (baru), `profile/edit.blade.php`, `big_revisi_mmc.md` |
+
+| 2026-10-31 | Tahap 5.9 + 5.10 (antrean unduhan laporan, Unduhan Saya, alat uji beban; 5.3 diabaikan) | Menunggu dicek (butuh migrate; 5.10 perlu dijalankan di staging) | `config/report_exports.php` (baru), `config/queue.php` (hanya `retry_after`), `database/migrations/2026_10_31_000001_create_report_exports_table.php` (baru), `app/Models/ReportExport.php` (baru), `app/Support/ReportExportRegistry.php` (baru), `app/Services/ReportExportService.php` (baru), `app/Jobs/GenerateReportExport.php` (baru), `app/Http/Controllers/ReportExportController.php` (baru), `app/Console/Commands/CleanupReportExports.php` (baru), `app/Console/Commands/BenchmarkReportExports.php` (baru), `app/Console/Kernel.php`, `routes/web.php`, `resources/views/laporan/unduhan.blade.php` (baru), `resources/views/laporan/_scripts.blade.php`, `resources/views/components/report-modal.blade.php`, `resources/views/layouts/_report-export-notify.blade.php` (baru), `resources/views/layouts/master.blade.php`, `resources/views/layouts/sidebar.blade.php`, `big_revisi_mmc.md` |
+| 2026-10-31 | Batal 5.9/5.10 (hapus antrean unduhan) + perbaikan nota non-tunai hilang di `/penjualan` | Menunggu dicek (butuh `php artisan migrate` untuk drop tabel `report_exports`) | `app/Support/PenjualanFilter.php`, `app/Http/Controllers/PenjualanController.php`, `app/Console/Kernel.php`, `routes/web.php`, `resources/views/laporan/_scripts.blade.php`, `resources/views/components/report-modal.blade.php`, `resources/views/layouts/master.blade.php`, `resources/views/layouts/sidebar.blade.php`, `database/migrations/2026_10_31_120000_drop_report_exports_table.php` (baru); dihapus: lihat daftar hapus di chat, `big_revisi_mmc.md` |
 
 **Checklist uji Tahap 2 (2.8)** — jalankan di lokal/staging dulu:
 1. Buka `/penjualan` tanpa parameter → hanya nota **hari ini** (Asia/Jakarta); URL tetap bersih. Ganti preset → tabel, kartu, dan URL ikut berubah; salin URL ke tab baru → filter sama.
@@ -577,3 +592,40 @@ Kode lengkap sudah ada, jadi tidak perlu kirim apa pun lagi. Per tahap, yang kuk
 8. Nota yang dihapus (soft delete) tidak ikut terhitung di kartu, grafik, maupun ranking.
 9. `/product`: tombol **Pengaturan Min Stok** muncul untuk `superadmin`/`admin-gudang` saja; simpan penyesuaian → halaman reload dan "Produk di Bawah Min Stok" di dashboard gudang ikut berubah.
 10. Data besar (30 hari – setahun) → halaman tetap terbuka cepat (kerangka dulu, data menyusul); cek jumlah query & waktu respons `/dashboard/sales-data` (≈45 query saat cache kosong) terhadap batas `max_user_connections` = 25.
+
+**Checklist uji Tahap 4A** — jalankan di lokal/staging dulu (buat 1 user `admin` lewat login superadmin):
+1. Login `superadmin` → `/admin` → Tambah: dropdown memuat Superadmin, Admin (Pusat), Admin Gudang, Staff Outlet, Owner. Buat user `admin` (tanpa outlet) → tersimpan; buat `staff-outlet` tanpa outlet → ditolak (outlet wajib).
+2. Login `admin`: sidebar sama dengan superadmin (Setting, User > Admin, Outlet, Customer, Payment, Gudang, Toko, Laporan); `/dashboard` terbuka (rekap penjualan + blok gudang).
+3. `admin` di `/admin`: akun **superadmin tidak tampil**; dropdown role **tanpa** Superadmin. Buka manual `/admin/<id superadmin>/edit` → 403; kirim `PUT`/`DELETE` ke akun superadmin → 403; coba ubah role lewat DevTools menjadi `superadmin` → ditolak validasi.
+4. `admin` edit akunnya sendiri → role tidak bisa dinaikkan; tombol Hapus tidak muncul di baris akun sendiri (juga untuk superadmin); `DELETE` ke id sendiri → ditolak dengan pesan.
+5. `admin` buka `/penjualan/create` → halaman pilih outlet (tidak redirect error); `kasir` → tetap diarahkan ke outlet-nya.
+6. `kasir` buka `/admin` → diarahkan ke dashboard dengan pesan "Akses ditolak" (bukan loop login).
+7. Regresi role lama: `admin-gudang`, `owner`, `staff-outlet`, `kasir` — sidebar & akses menu sama seperti sebelum Tahap 4A (bandingkan dengan staging lama). Owner/superadmin/admin bisa ACC PO; admin-gudang tidak.
+8. `admin` di `/setting` bisa mengisi PIN Retur; `admin` di `/product` melihat tombol Pengaturan Min Stok.
+**Checklist uji pembatalan 5.9 / 5.10 + perbaikan `/penjualan`** — lokal dulu, setelah backup:
+1. `docker-compose exec app php artisan migrate` → tabel `report_exports` terhapus, tanpa galat. `docker-compose exec app php artisan route:list` tidak lagi memuat `laporan.unduhan.*`.
+2. Menu *Laporan* di sidebar hanya berisi Laporan Gudang & Laporan Outlet. Unduh laporan rentang panjang → langsung terunduh (tidak ada pesan "latar belakang").
+3. `/penjualan` dengan rentang 28 Okt 2026: INV000084 (QRIS) dan semua nota non-tunai muncul; jumlah nota di kartu ringkasan = jumlah baris tabel. Halaman marketplace hanya memuat penjualan tanpa outlet.
+4. Import produk (antrean `imports`) tetap jalan seperti sebelumnya.
+
+**Catatan:** `admin` **belum dibatasi hapus** — masih bisa menghapus langsung sampai Tahap 4B/4C selesai. Jangan beri role `admin` ke user nyata sebelum 4B.3 terpasang.
+
+**Checklist uji Tahap 4B** — lokal/staging dulu, setelah backup + `php artisan migrate`:
+1. Login `admin`, hapus data master (mis. kategori/supplier) lewat tombol Hapus biasa → data **tetap ada**, muncul toast "Permintaan hapus dikirim ke superadmin". Klik Hapus lagi pada data yang sama → pesan "Sudah ada permintaan…" (tidak dobel).
+2. Login `superadmin` → sidebar "Permintaan Hapus" berbadge, dashboard menampilkan kartu kuning. Buka halaman: data, pemohon, detail snapshot tampil.
+3. **Setujui** → data benar-benar terhapus lewat logika hapus modul yang sama; tab Disetujui terisi; `activity_log` bertambah. **Tolak** → data tetap ada, status Ditolak.
+4. Ubah data target setelah diajukan lalu buka halaman → muncul peringatan "Data berubah sejak diajukan". Hapus data itu manual (sebagai superadmin) lalu setujui request lama → status **Gagal** dengan pesan, bukan error 500.
+5. Admin menembak `DELETE` langsung (DevTools/Postman) ke endpoint modul mana pun → tetap hanya membuat permintaan, bukan terhapus. Admin ke `profile.destroy` → 403.
+6. Superadmin hapus langsung → perilaku sama seperti sebelumnya. `kasir`/`staff-outlet`/`admin-gudang`/`owner` → perilaku hapus lama (tidak dicegat).
+7. Setujui massal 3–5 request sekaligus; satu yang sengaja gagal tidak menghentikan yang lain.
+8. Hapus yang menyentuh stok (Penjualan, PO, Retur) **belum mengoreksi stok** sampai 4C.0 — jangan setujui request jenis itu di produksi dulu.
+**Catatan teknis:** alasan penghapusan belum wajib (`DELETION_REQUIRE_REASON=false`) karena tombol lama belum punya kolom alasan; nyalakan setelah 4B.4. Bila sebuah modul memakai `destroy` yang mengembalikan JSON/redirect dengan `toast_error` saat gagal, itu dihitung sebagai gagal.
+**Checklist uji Tahap 4C/4D** — lokal/staging, setelah backup:
+1. Superadmin hapus penjualan: stok batch naik sebesar qty nota, Kartu Stok Toko ada movement masuk, nota hilang dari /penjualan, dashboard, laporan.
+2. Nota di sesi yang sudah closing: `cash_sales`/`expected_cash`/`discrepancy` berubah, `closing_cash` tetap; cek `activity_log`.
+3. Nota punya retur → hapus ditolak dengan pesan; request admin menjadi Gagal.
+4. Admin klik Hapus → modal alasan (kosong ditolak) → request tercatat dengan alasan; badge menunggu muncul; setujui → hasil sama seperti no. 1.
+5. Hapus item PO/RO oleh admin (AJAX) → pesan lalu halaman dimuat ulang, item masih ada.
+6. PO dengan penerimaan parsial: hapus → stok berkurang + movement; PO yang batchnya sudah dipakai → ditolak.
+7. `GET /stock/{id}` tidak menghapus apa pun. Produk/outlet dengan stok outlet tidak bisa dihapus.
+8. kasir/staff-outlet/owner/admin-gudang: tombol Hapus penjualan tidak tampil; DELETE langsung → 403.

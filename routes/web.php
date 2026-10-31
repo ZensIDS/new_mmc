@@ -55,7 +55,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->group(function () {
+Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin|admin'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/dashboard/sales-data', [DashboardController::class, 'salesData'])->name('dashboard.sales-data');
     Route::get('/setting', [DashboardController::class, 'setting'])->name('setting');
@@ -110,7 +110,7 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
         ->name('product.minimum-adjustment.store');
     Route::resource('/product', ProductController::class);
 
-    Route::resource('/stock', StockController::class)->middleware('role:superadmin|admin-gudang|owner');
+    Route::resource('/stock', StockController::class)->middleware('role:superadmin|admin|admin-gudang|owner');
     Route::resource('/outlet-prices', App\Http\Controllers\OutletPriceController::class)->except(['show']);
     Route::get('/outlet-prices/products/search', [App\Http\Controllers\OutletPriceController::class, 'searchProducts'])->name('outlet-prices.products.search');
     Route::get('/outlet-prices/preview-hpp', [App\Http\Controllers\OutletPriceController::class, 'previewHpp'])->name('outlet-prices.preview-hpp');
@@ -166,7 +166,8 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
         ->name('pembelian.penerimaan.update-expired');
 
     Route::get('/pembelian/{pembelian}/print', [PembelianController::class, 'print'])->name('pembelian.print');
-    Route::get('/pembelian/{id}/destroy', [PembelianController::class, 'stockDestroy'])->name('pembelian.stock.destroy');
+    // Tahap 4C.4: dulu GET (bisa terpicu link/prefetch/CSRF) -> kini DELETE; otomatis dijaga deletion.guard.
+    Route::delete('/pembelian/{id}/destroy', [PembelianController::class, 'stockDestroy'])->name('pembelian.stock.destroy');
     Route::get('/supplier/{supplier}/products', [App\Http\Controllers\PembelianController::class, 'getProductsBySupplier'])->name('supplier.products');
 
     Route::get('/retur/supplier/{supplier}/products', [RefundPembelianController::class, 'getSupplierProducts'])->name('retur.supplier.products');
@@ -179,6 +180,7 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
 
     Route::get('/laporan', [LaporanController::class, 'index'])->name('laporan.index');
     Route::get('/laporan/outlet', [LaporanController::class, 'indexOutlet'])->name('laporan.outlet.index');
+
     Route::get('/laporan/outlet/minimal-stock', [LaporanController::class, 'exportOutletMinimalStock'])->name('laporan.outlet.minimal-stock');
     Route::get('/laporan/outlet/penjualan', [LaporanController::class, 'exportOutletPenjualan'])->name('laporan.outlet.penjualan');
     Route::get('/laporan/outlet/rafaksi', [LaporanController::class, 'exportOutletRafaksi'])->name('laporan.outlet.rafaksi');
@@ -243,22 +245,22 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
     Route::get('owner-stocks', [App\Http\Controllers\OwnerStockController::class, 'index'])->name('owner-stocks.index');
     Route::get('owner-stocks/data', [App\Http\Controllers\OwnerStockController::class, 'getIndexData'])->name('owner-stocks.index.data');
     Route::get('owner-stocks/history', [App\Http\Controllers\OwnerStockController::class, 'history'])->name('owner-stocks.history');
-    Route::get('stocks/data', [StockController::class, 'getIndexData'])->middleware('role:superadmin|admin-gudang|owner')->name('stocks.index.data');
+    Route::get('stocks/data', [StockController::class, 'getIndexData'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stocks.index.data');
     Route::get('owner-stocks/{owner}', [App\Http\Controllers\OwnerStockController::class, 'show'])->name('owner-stocks.show');
 
     Route::get('/product/{product}/price-history', [App\Http\Controllers\ProductController::class, 'priceHistory'])->name('product.price-history');
-    Route::get('/stock/{stock}/history', [App\Http\Controllers\StockController::class, 'history'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.history');
+    Route::get('/stock/{stock}/history', [App\Http\Controllers\StockController::class, 'history'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.history');
 
     // Stock Kartu
-    Route::get('/stock-kartu', [App\Http\Controllers\StockController::class, 'kartu'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.kartu');
-    Route::get('/stocks/search', [StockController::class, 'searchStock'])->middleware('role:superadmin|admin-gudang|owner')->name('stocks.search');
-    Route::get('/stock/kartu/data', [App\Http\Controllers\StockController::class, 'getKartuData'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.kartu.data');
+    Route::get('/stock-kartu', [App\Http\Controllers\StockController::class, 'kartu'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.kartu');
+    Route::get('/stocks/search', [StockController::class, 'searchStock'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stocks.search');
+    Route::get('/stock/kartu/data', [App\Http\Controllers\StockController::class, 'getKartuData'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.kartu.data');
 
     // Stock Opname
-    Route::get('/stock-opname', [App\Http\Controllers\StockController::class, 'opname'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.opname');
-    Route::get('/stock-opname/data', [App\Http\Controllers\StockController::class, 'getOpnameData'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.opname.data');
-    Route::post('/stock-opname/save', [App\Http\Controllers\StockController::class, 'saveOpname'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.opname.save');
-    Route::get('/stock-opname/export-template', [App\Http\Controllers\StockController::class, 'exportOpnameTemplate'])->middleware('role:superadmin|admin-gudang|owner')->name('stock.opname.export-template');
+    Route::get('/stock-opname', [App\Http\Controllers\StockController::class, 'opname'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.opname');
+    Route::get('/stock-opname/data', [App\Http\Controllers\StockController::class, 'getOpnameData'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.opname.data');
+    Route::post('/stock-opname/save', [App\Http\Controllers\StockController::class, 'saveOpname'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.opname.save');
+    Route::get('/stock-opname/export-template', [App\Http\Controllers\StockController::class, 'exportOpnameTemplate'])->middleware('role:superadmin|admin|admin-gudang|owner')->name('stock.opname.export-template');
 
     // Supplier
     Route::get('suppliers/export', [SupplierController::class, 'export'])->name('supplier.export');
@@ -328,12 +330,25 @@ Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->gr
 // Customer & daftar payment method dipakai langsung oleh halaman kasir (POS),
 // jadi harus bisa diakses role operasional. Menu sidebar-nya tetap hanya
 // tampil untuk superadmin (lihat layouts/sidebar.blade.php).
-Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin'])->group(function () {
+Route::middleware(['role:admin-gudang|staff-outlet|kasir|owner|superadmin|admin'])->group(function () {
     Route::resource('/customer', CustomerController::class);
     Route::get('/payment', [PaymentMethodController::class, 'index'])->name('payment.index');
 });
 
-Route::middleware(['role:superadmin'])->group(function () {
+// Tahap 4B.4 — daftar hapus yang menunggu persetujuan (dipakai skrip tombol Hapus; admin & superadmin).
+Route::middleware(['auth', 'role:superadmin|admin'])->get('deletion-requests/pending-actions', [\App\Http\Controllers\DeletionRequestController::class, 'pendingActions'])->name('deletion-requests.pending-actions');
+
+Route::middleware(['auth', 'role:superadmin|admin'])->get('deletion-requests/mine', [\App\Http\Controllers\DeletionRequestController::class, 'mine'])->name('deletion-requests.mine');
+
+// Permintaan Hapus (Tahap 4B): HANYA superadmin yang boleh melihat & memutuskan (K3).
+Route::middleware(['auth', 'role:superadmin'])->prefix('deletion-requests')->name('deletion-requests.')->group(function () {
+    Route::get('/', [\App\Http\Controllers\DeletionRequestController::class, 'index'])->name('index');
+    Route::post('bulk-approve', [\App\Http\Controllers\DeletionRequestController::class, 'bulkApprove'])->name('bulk-approve');
+    Route::post('{deletionRequest}/approve', [\App\Http\Controllers\DeletionRequestController::class, 'approve'])->name('approve');
+    Route::post('{deletionRequest}/reject', [\App\Http\Controllers\DeletionRequestController::class, 'reject'])->name('reject');
+});
+
+Route::middleware(['role:superadmin|admin'])->group(function () {
     Route::resource('/admin', AdminController::class);
     Route::resource('/payment', PaymentMethodController::class)->except(['index']);
 });
@@ -342,7 +357,7 @@ require __DIR__ . '/auth.php';
 
 //* Artisan Commands
 // Hanya superadmin yang sudah login. Sebelumnya terbuka tanpa login (tidak aman di produksi).
-Route::middleware(['auth', 'role:superadmin'])->group(function () {
+Route::middleware(['auth', 'role:superadmin|admin'])->group(function () {
     Route::get('/optimize-clear', function () {
         Artisan::call('optimize:clear');
 
@@ -355,3 +370,13 @@ Route::middleware(['auth', 'role:superadmin'])->group(function () {
         return redirect()->route('dashboard')->with('toast_success', 'Storage link berhasil');
     })->name('artisan.storage-link');
 });
+
+// Tahap 4B.3 — pasang deletion.guard ke SEMUA rute DELETE (dan rute hapus non-DELETE di
+// config/deletion.php). Ditaruh paling akhir supaya semua rute (termasuk resource) sudah terdaftar;
+// middleware ini ditambahkan setelah middleware lama sehingga `role:` tetap dicek lebih dulu.
+foreach (Route::getRoutes() as $route) {
+    $extra = in_array($route->getName(), config('deletion.extra_routes', []), true);
+    if ((in_array('DELETE', $route->methods(), true) || $extra) && ! in_array('deletion.guard', $route->middleware(), true)) {
+        $route->middleware('deletion.guard');
+    }
+}

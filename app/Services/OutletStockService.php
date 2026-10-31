@@ -119,6 +119,44 @@ class OutletStockService
         });
     }
 
+    /**
+     * Kembalikan stok yang pernah dikeluarkan (mis. penjualan dihapus). Mencatat movement
+     * `in` pada ledger toko supaya Kartu Stok Toko tetap seimbang. Tidak menyentuh HPP batch.
+     */
+    public function restore(
+        OwnerStock $ownerStock,
+        int $qty,
+        string $referenceType,
+        int $referenceId,
+        ?Authenticatable $user = null,
+        ?string $notes = null
+    ): OwnerStock {
+        if ($qty < 1) {
+            throw new RuntimeException('Qty pengembalian stock outlet harus lebih besar dari nol.');
+        }
+
+        return DB::transaction(function () use ($ownerStock, $qty, $referenceType, $referenceId, $user, $notes) {
+            $locked = OwnerStock::whereKey($ownerStock->id)->lockForUpdate()->firstOrFail();
+
+            $locked->increment('qty', $qty);
+            StockMovement::create([
+                'product_id' => $locked->product_id,
+                'owner_id' => $locked->owner_id,
+                'owner_stock_id' => $locked->id,
+                'user_id' => $user?->getAuthIdentifier(),
+                'type' => 'in',
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
+                'qty_in' => $qty,
+                'qty_out' => 0,
+                'balance' => $locked->qty,
+                'notes' => $notes ?? 'Pengembalian stock toko',
+            ]);
+
+            return $locked->fresh();
+        });
+    }
+
     public function adjust(
         OwnerStock $ownerStock,
         float $physicalQty,

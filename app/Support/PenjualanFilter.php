@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  *  - Default = HARI INI (tanggal kalender zona waktu aplikasi, K10).
  *  - staff-outlet / kasir DIPAKSA ke outlet sendiri di server (K16),
  *    bukan hanya disembunyikan di UI.
- *  - Penjualan marketplace (punya transaction) tidak ikut, sama seperti halaman lama.
+ *  - Penjualan marketplace (punya transaction & outlet_id kosong) tidak ikut.
  */
 class PenjualanFilter
 {
@@ -143,7 +143,11 @@ class PenjualanFilter
     /** Terapkan filter ke query Penjualan. */
     public function apply(Builder $query): Builder
     {
-        $query->doesntHave('transaction')
+        // Marketplace = punya transaction DAN tanpa outlet. Penjualan kasir yang bayar non-tunai
+        // (QRIS/transfer) juga punya baris transaction, jadi tidak boleh ikut tersingkir.
+        $query->where(function ($q) {
+                $q->doesntHave('transaction')->orWhereNotNull('penjualans.outlet_id');
+            })
             ->where('penjualans.created_at', '>=', $this->start)
             ->where('penjualans.created_at', '<=', $this->end);
 

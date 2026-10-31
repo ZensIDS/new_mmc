@@ -193,7 +193,7 @@ class ProductController extends Controller
             ->withQueryString();
 
         // Sama seperti tombol lama di dashboard (admin-gudang & superadmin) + admin pusat (= superadmin).
-        $canAdjustMinStock = in_array($request->user()?->role, ['superadmin', 'admin', 'admin-gudang'], true);
+        $canAdjustMinStock = (bool) $request->user()?->canAccess('admin-gudang');
         $adjustmentProducts = $canAdjustMinStock ? $this->minStockAdjustmentProducts() : collect();
 
         return view('products.index', [
@@ -359,6 +359,16 @@ class ProductController extends Controller
             return redirect()->back()->with(
                 'toast_error',
                 "Tidak dapat menghapus produk \"{$product->name}\" karena masih memiliki stok sebanyak {$totalStock}. Kosongkan stok terlebih dahulu sebelum menghapus produk."
+            );
+        }
+
+        // Tahap 4C.0: stok di OUTLET juga harus kosong (sebelumnya hanya gudang dicek, sehingga
+        // produk yang masih punya stok toko bisa terhapus dan stok toko menjadi yatim).
+        $outletStock = (int) \App\Models\OwnerStock::where('product_id', $product->id)->sum('qty');
+        if ($outletStock > 0) {
+            return redirect()->back()->with(
+                'toast_error',
+                "Tidak dapat menghapus produk \"{$product->name}\" karena masih memiliki stok di outlet sebanyak {$outletStock}. Kosongkan stok outlet terlebih dahulu."
             );
         }
 

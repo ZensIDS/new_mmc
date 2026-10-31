@@ -75,7 +75,7 @@
                                     @foreach ($roles as $role)
                                         <option value="{{ $role }}"
                                             {{ old('role', $admin->role) == $role ? 'selected' : '' }}>
-                                            {{ $role }}
+                                            {{ $roleLabels[$role] ?? $role }}
                                         </option>
                                     @endforeach
                                 </select>

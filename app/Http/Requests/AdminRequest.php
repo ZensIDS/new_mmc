@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class AdminRequest extends FormRequest
 {
@@ -16,8 +17,9 @@ class AdminRequest extends FormRequest
         return [
             'name' => 'required',
             'username' => 'required',
-            'outlet_id' => 'nullable',
-            'role' => 'required',
+            'outlet_id' => 'required_if:role,staff-outlet|required_if:role,admin-gudang',
+            // Allow-list: admin tidak boleh membuat akun superadmin.
+            'role' => ['required', Rule::in($this->user()?->assignableRoles() ?? [])],
             'status' => 'required',
             'email' => 'required|email',
             'password' => 'required|same:confirm-password',
@@ -34,10 +36,11 @@ class AdminRequest extends FormRequest
             'username.required' => 'Username wajib diisi.',
 
             // Outlet ID field messages
-            'outlet_id.required_if' => 'Outlet wajib dipilih untuk role :input.',
+            'outlet_id.required_if' => 'Outlet wajib dipilih untuk role :value.',
 
             // Role field messages
             'role.required' => 'Role pengguna wajib dipilih.',
+            'role.in' => 'Role tersebut tidak boleh diberikan oleh akun Anda.',
 
             // Status field messages
             'status.required' => 'Status akun wajib dipilih.',

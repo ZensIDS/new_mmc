@@ -14,6 +14,17 @@
     </section>
 
     <section class="content">
+        {{-- Kartu permintaan hapus yang menunggu (khusus superadmin, 4B.6) --}}
+        @if (auth()->user()->canApproveDeletion())
+            @php $pendingDeletions = rescue(fn () => \App\Models\DeletionRequest::pendingCount(), 0, false); @endphp
+            @if ($pendingDeletions > 0)
+                <div class="callout callout-warning" style="margin-bottom:15px;">
+                    <h4><i class="fa fa-trash-o"></i> {{ $pendingDeletions }} permintaan hapus menunggu persetujuan</h4>
+                    <p>Admin mengajukan penghapusan data. <a href="{{ route('deletion-requests.index') }}"><strong>Tinjau sekarang <i class="fa fa-arrow-circle-right"></i></strong></a></p>
+                </div>
+            @endif
+        @endif
+
         {{-- 1. Penjualan: semua role kecuali admin-gudang (K8); staff-outlet/kasir hanya outlet sendiri (K23) --}}
         @if($showSales ?? false)
             @include('dashboard._sales')

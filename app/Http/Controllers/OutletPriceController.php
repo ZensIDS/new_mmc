@@ -228,6 +228,6 @@ class OutletPriceController extends Controller
 
     private function ensureManagementAccess(): void
     {
-        abort_unless(in_array(auth()->user()?->role, ['superadmin', 'admin-gudang', 'owner'], true), 403);
+        abort_unless(auth()->user()?->canAccess('admin-gudang', 'owner'), 403);
     }
 }

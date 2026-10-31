@@ -12,11 +12,14 @@
     $id     = $report['id'];
     $fields = $report['fields'];
     $hasPdf = $showPdf && ! empty($report['pdf_url']);
+
+    $maxDays     = $report['max_days'] ?? null;
 @endphp
 
 <div id="modal_{{ $id }}" class="modal fade rpt-modal rpt-{{ $report['color'] ?? 'purple' }}" role="dialog"
      data-report-id="{{ $id }}"
-     data-max-days="{{ $report['max_days'] ?? '' }}">
+     data-report-route="{{ $report['xls'] }}"
+     data-max-days="{{ $maxDays ?? '' }}">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -39,8 +42,10 @@
                             <input type="text" id="range_{{ $id }}" class="form-control rpt-range" readonly
                                    data-start="{{ $defaultStart }}" data-end="{{ $defaultEnd }}">
                         </div>
-                        @if (! empty($report['max_days']))
-                            <p class="help-block">Maksimal {{ $report['max_days'] }} hari per laporan.</p>
+                        @if (! empty($maxDays))
+                            <p class="help-block">
+                                Maksimal {{ $maxDays }} hari per laporan.
+                            </p>
                         @endif
                     </div>
                 @else

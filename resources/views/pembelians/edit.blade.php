@@ -49,7 +49,7 @@
                                     <br><small>Catatan owner: {{ $pembelian->owner_approval_note }}</small>
                                 @endif
                             </div>
-                            @if (in_array(auth()->user()->role, ['owner', 'superadmin']) && $pembelian->owner_approval_status === 'pending')
+                            @if (auth()->user()->canAccess('owner') && $pembelian->owner_approval_status === 'pending')
                                 <div class="row">
                                     <div class="col-md-6">
                                         <div class="form-group">

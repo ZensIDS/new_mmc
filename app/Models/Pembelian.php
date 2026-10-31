@@ -96,7 +96,7 @@ class Pembelian extends Model
             return false;
         }
 
-        if (in_array($user->role, ['superadmin', 'owner'], true)) {
+        if ($user->canAccess('owner')) {
             return true;
         }
 

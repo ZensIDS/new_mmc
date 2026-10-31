@@ -113,6 +113,15 @@ class OutletController extends Controller
 
     public function destroy(Outlet $outlet)
     {
+        // Tahap 4C.0: outlet yang masih menyimpan stok tidak boleh dihapus (stok akan yatim).
+        $stock = (int) \App\Models\OwnerStock::where('owner_id', $outlet->id)->sum('qty');
+        if ($stock > 0) {
+            return redirect(route('outlet.index'))->with(
+                'toast_error',
+                "Outlet \"{$outlet->name}\" masih memiliki stok sebanyak {$stock}. Kosongkan/pindahkan stok terlebih dahulu."
+            );
+        }
+
         // Delete the image file
         if ($outlet->logo) {
             Storage::delete(str_replace('storage', 'public', $outlet->logo));

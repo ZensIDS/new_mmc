@@ -213,7 +213,7 @@ class PembelianController extends Controller
             // ==== Kolom Aksi ====
             $aksiHtml = '';
 
-            if (in_array($authUser->role, ['owner', 'superadmin']) && $value->owner_approval_status === 'pending') {
+            if ($authUser->canAccess('owner') && $value->owner_approval_status === 'pending') {
                 $aksiHtml .= '<form action="' . route('pembelian.owner-approve', $value->id) . '" method="post" style="display:inline">'
                     . csrf_field()
                     . '<button class="btn btn-xs btn-success" title="ACC Owner"><i class="fa fa-check"></i> ACC</button></form> ';
@@ -1411,6 +1411,18 @@ class PembelianController extends Controller
         }
     }
 
+    /**
+     * Hapus PO (soft delete) — Tahap 4C.0 (K18/K20): stok gudang yang sudah masuk dari PO ini
+     * DIKOREKSI. Penerimaan parsial (autosave) sudah membuat baris `stocks` + movement `in`
+     * walau PO belum terbit, jadi menghapusnya tanpa koreksi membuat Kartu Stok & nilai stok salah.
+     *
+     *  - batch yang sudah dipakai (picking/pengiriman/stok outlet/retur) -> hapus DITOLAK (pesan jelas);
+     *  - selain itu tiap batch dicatat movement keluar (referensi PO) lalu dihapus,
+     *    sisa stok pembelian (stock_pembelians) ikut dibersihkan, nilai stok produk dihitung ulang;
+     *  - semua dalam satu transaksi.
+     * HPP produk tidak dikembalikan otomatis (rata-rata tertimbang tidak bisa dibalik tepat);
+     * dicatat di log aktivitas.
+     */
     public function destroy(Pembelian $pembelian)
     {
         if (auth()->user()->role === 'owner' || ! $pembelian->canBeEditedBy(auth()->user())) {
@@ -1418,12 +1430,73 @@ class PembelianController extends Controller
                 ->with('toast_error', 'PO ini belum bisa dihapus.');
         }
 
-        $pembelian->stocks()->delete();
-        $pembelian->delete();
+        DB::beginTransaction();
+        try {
+            Pembelian::whereKey($pembelian->id)->lockForUpdate()->first();
 
-        return redirect(route('pembelian.index'))->with('toast_success', 'Berhasil Menghapus Data!');
+            $stocks = $pembelian->stocks()->lockForUpdate()->get();
+
+            foreach ($stocks as $stock) {
+                if ($this->stockAlreadyUsed($stock)) {
+                    throw new \Exception("Batch SKU {$stock->sku} dari PO ini sudah dipakai transaksi (picking/pengiriman/stok outlet/retur), PO tidak bisa dihapus.");
+                }
+            }
+
+            $productIds = [];
+            $corrected = [];
+            foreach ($stocks as $stock) {
+                $qty = (int) $stock->qty;
+                $productIds[$stock->product_id] = true;
+
+                $stock->delete();
+
+                if ($qty > 0) {
+                    StockMovement::create([
+                        'product_id' => $stock->product_id,
+                        'user_id' => auth()->id(),
+                        'type' => 'adjustment',
+                        'reference_type' => Pembelian::class,
+                        'reference_id' => $pembelian->id,
+                        'qty_in' => 0,
+                        'qty_out' => $qty,
+                        'balance' => (int) Stock::where('product_id', $stock->product_id)->sum('qty'),
+                        'notes' => "Pembatalan PO {$pembelian->code} (dihapus) - SKU: {$stock->sku}",
+                    ]);
+                    $corrected[] = ['product_id' => $stock->product_id, 'sku' => $stock->sku, 'qty' => $qty];
+                }
+            }
+
+            // Sisa penerimaan yang belum diterima (stock sebelum terbit) ikut dibersihkan.
+            StockPembelian::where('pembelian_id', $pembelian->id)->delete();
+
+            foreach (array_keys($productIds) as $productId) {
+                Product::find($productId)?->updateStockValue();
+            }
+
+            $pembelian->delete();
+
+            if (function_exists('activity')) {
+                activity('Pembelian')
+                    ->causedBy(auth()->user())
+                    ->performedOn($pembelian)
+                    ->withProperties(['code' => $pembelian->code, 'stok_dikoreksi' => $corrected])
+                    ->log('PO dihapus, stok gudang dikoreksi');
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return redirect()->route('pembelian.index')->with('toast_error', 'PO tidak dihapus: '.$e->getMessage());
+        }
+
+        return redirect(route('pembelian.index'))->with('toast_success', 'PO dihapus dan stok gudang dikoreksi.');
     }
 
+    /**
+     * Hapus satu item PO (dulu lewat GET; kini DELETE — Tahap 4C.4). Membersihkan sisa
+     * stock_pembelians produk itu bila tidak dipakai item lain (sama seperti destroyItem).
+     */
     public function stockDestroy($id)
     {
         $pembelianProduct = PembelianProduct::find($id);
@@ -1437,11 +1510,14 @@ class PembelianController extends Controller
                 ->with('toast_error', 'PO ini belum bisa diedit.');
         }
 
-        $pembelianProduct->delete();
+        DB::transaction(function () use ($pembelian, $pembelianProduct) {
+            $productId = $pembelianProduct->product_id;
+            $pembelianProduct->delete();
 
-        $pembelian->update(
-            ['total' => $pembelian->pembelianProducts->sum('subtotal')]
-        );
+            $this->cleanupStockPembelian($pembelian, $productId);
+
+            $pembelian->update(['total' => $pembelian->pembelianProducts()->sum('subtotal')]);
+        });
 
         return redirect()->back()->with('toast_success', 'Berhasil Menghapus Data!');
     }
@@ -1581,7 +1657,7 @@ class PembelianController extends Controller
 
     public function approveOwner(Request $request, Pembelian $pembelian)
     {
-        if (! in_array(auth()->user()->role, ['owner', 'superadmin'])) {
+        if (! auth()->user()->canAccess('owner')) {
             abort(403);
         }
 
@@ -1601,7 +1677,7 @@ class PembelianController extends Controller
 
     public function rejectOwner(Request $request, Pembelian $pembelian)
     {
-        if (! in_array(auth()->user()->role, ['owner', 'superadmin'])) {
+        if (! auth()->user()->canAccess('owner')) {
             abort(403);
         }
 

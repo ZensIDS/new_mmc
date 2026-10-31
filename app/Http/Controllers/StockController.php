@@ -215,26 +215,20 @@ class StockController extends Controller
     //     ]);
     // }
 
+    /**
+     * DINONAKTIFKAN (Tahap 4C.0, K20). Dulu `GET /stock/{stock}` MENGHAPUS baris stok tanpa
+     * koreksi apa pun dan tanpa konfirmasi/persetujuan (menyaru sebagai halaman "show").
+     * Hapus stok tidak dipakai; koreksi stok dilakukan lewat Stock Opname.
+     */
     public function show(Stock $stock)
     {
-        $stock->delete();
-
-        $total = $stock->pembelian->stocks->sum('subtotal');
-        $stock->pembelian->update(['total' => $total]);
-
-        return redirect()->back()->with('toast_success', 'Berhasil Menghapus Data!');
+        return redirect()->back()->with('toast_error', 'Hapus stok tidak diaktifkan. Koreksi stok lewat Stock Opname.');
     }
 
+    /** DINONAKTIFKAN (K20): sebelumnya berisi dd(). Tidak ada perubahan data. */
     public function destroy(Stock $stock)
     {
-        dd(
-            'destory Stock',
-            $stock->toArray(),
-            $stock->pembelian->toArray()
-        );
-        // $stock->delete();
-
-        return redirect()->back()->with('toast_success', 'Berhasil Menghapus Data!');
+        return redirect()->back()->with('toast_error', 'Hapus stok tidak diaktifkan. Koreksi stok lewat Stock Opname.');
     }
 
     public function history(Stock $stock)

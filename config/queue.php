@@ -38,7 +38,9 @@ return [
             'driver' => 'database',
             'table' => 'jobs',
             'queue' => 'default',
-            'retry_after' => 90,
+            // Harus LEBIH BESAR dari timeout job terpanjang (laporan: 1500 dtk, import: 1200 dtk).
+            // Dengan 90 dtk, job panjang bisa dianggap macet lalu diambil ulang (Tahap 5.9).
+            'retry_after' => (int) env('QUEUE_RETRY_AFTER', 1800),
             'after_commit' => false,
         ],
 

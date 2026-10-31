@@ -27,6 +27,8 @@ class RoleMiddleware
         // 3. Define landing pages per role
         $homeRoutes = [
             'customer'     => 'market.index',
+            'admin'        => 'dashboard',
+            'kasir'        => 'dashboard',
             'admin-gudang' => 'dashboard',
             'staff-outlet' => 'dashboard',
             'owner'        => 'dashboard',

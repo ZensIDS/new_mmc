@@ -34,9 +34,10 @@
                                     <td>{{ $loop->iteration }}</td>
                                     <td>{{ $value->name }}</td>
                                     <td>{{ $value->email }}</td>
-                                    <td>{{ $value->role }}</td>
+                                    <td>{{ $value->roleLabel() }}</td>
                                     <td>
                                         <a class="btn btn-warning" href="{{ route('admin.edit', $value->id) }}">Edit</a>
+                                        @if ($value->id !== $currentUserId)
                                         <form action="{{ route('admin.destroy', $value->id) }}" method="post"
                                             style="display: inline;">
                                             @method('delete')
@@ -44,6 +45,7 @@
                                             <button class="border-0 btn btn-danger"
                                                 onclick="return confirm('Are you sure?')">Hapus</button>
                                         </form>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach

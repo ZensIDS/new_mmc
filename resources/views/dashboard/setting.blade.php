@@ -47,7 +47,7 @@
                                     </div>
                                 @endif
                             </div>
-                            @if(auth()->user()?->role === 'superadmin')
+                            @if(auth()->user()?->hasFullAccess())
                                 <div class="form-group">
                                     <label for="return_pin">PIN Retur Penjualan :</label>
                                     <input class="form-control" type="password" name="return_pin" id="return_pin" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" placeholder="Masukkan PIN baru (4–8 digit)">
