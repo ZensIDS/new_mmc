@@ -12,6 +12,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KasController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\MarketplaceController;
+use App\Http\Controllers\NotaFiktifController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\PembelianController;
@@ -351,6 +352,18 @@ Route::middleware(['auth', 'role:superadmin'])->prefix('deletion-requests')->nam
 Route::middleware(['role:superadmin|admin'])->group(function () {
     Route::resource('/admin', AdminController::class);
     Route::resource('/payment', PaymentMethodController::class)->except(['index']);
+});
+
+// Nota Fiktif: HANYA superadmin. Tidak menyentuh stok/penjualan/kas/laporan.
+Route::middleware(['auth', 'role:superadmin'])->prefix('nota-fiktif')->name('nota-fiktif.')->group(function () {
+    Route::get('/', [NotaFiktifController::class, 'index'])->name('index');
+    Route::get('/produk', [NotaFiktifController::class, 'products'])->name('products');
+    Route::get('/buat', [NotaFiktifController::class, 'create'])->name('create');
+    Route::post('/', [NotaFiktifController::class, 'store'])->name('store');
+    Route::get('/{notaFiktif}', [NotaFiktifController::class, 'show'])->name('show');
+    Route::get('/{notaFiktif}/edit', [NotaFiktifController::class, 'edit'])->name('edit');
+    Route::put('/{notaFiktif}', [NotaFiktifController::class, 'update'])->name('update');
+    Route::delete('/{notaFiktif}', [NotaFiktifController::class, 'destroy'])->name('destroy');
 });
 
 require __DIR__ . '/auth.php';

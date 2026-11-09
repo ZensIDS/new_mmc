@@ -49,6 +49,13 @@
         </li>
         @endif
 
+        {{-- Nota Fiktif (khusus superadmin; tidak mempengaruhi stok & laporan) --}}
+        @if ($me->isSuperadmin())
+        <li class="{{ request()->is('nota-fiktif*') ? 'active' : '' }}">
+            <a href="{{ route('nota-fiktif.index') }}"><i class="fa fa-file-text-o"></i><span>Nota </span></a>
+        </li>
+        @endif
+
         {{-- Pengajuan Hapus Saya (admin): pantau status & alasan ditolak/gagal --}}
         @if ($me->mustRequestDeletion())
         @php $myDel = rescue(fn () => \App\Models\DeletionRequest::where('requested_by', $me->id)->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status'), collect(), false); @endphp
