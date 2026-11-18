@@ -33,6 +33,9 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // Saldo customer hanya untuk superadmin: jangan pernah ikut ter-serialize
+        // ke JSON (mis. daftar customer yang dimuat halaman kasir).
+        'wallet',
     ];
 
     protected $casts = [
@@ -61,6 +64,25 @@ class User extends Authenticatable
     public function outlet()
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    /** Saldo customer (catatan mutasi; hanya dikelola superadmin, tidak dipakai kasir). */
+    public function wallet()
+    {
+        return $this->hasOne(CustomerWallet::class, 'customer_id');
+    }
+
+    public function walletEntries()
+    {
+        return $this->hasMany(CustomerWalletEntry::class, 'customer_id')
+            ->orderBy('tanggal')
+            ->orderBy('id');
+    }
+
+    /** Customer sungguhan (bukan Customer Umum) yang boleh punya catatan saldo. */
+    public function canHaveWallet(): bool
+    {
+        return $this->role === 'customer' && ! $this->isDefaultCustomer();
     }
 
     /** Transaksi penjualan milik customer ini (penjualans.customer_id bertipe string). */

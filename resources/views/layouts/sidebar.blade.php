@@ -56,6 +56,13 @@
         </li>
         @endif
 
+        {{-- Saldo Customer (khusus superadmin; hanya catatan mutasi, tidak dipakai kasir) --}}
+        @if ($me->isSuperadmin())
+        <li class="{{ request()->is('saldo-customer*') ? 'active' : '' }}">
+            <a href="{{ route('saldo-customer.index') }}"><i class="fa fa-money"></i><span>Saldo Customer</span></a>
+        </li>
+        @endif
+
         {{-- Pengajuan Hapus Saya (admin): pantau status & alasan ditolak/gagal --}}
         @if ($me->mustRequestDeletion())
         @php $myDel = rescue(fn () => \App\Models\DeletionRequest::where('requested_by', $me->id)->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status'), collect(), false); @endphp

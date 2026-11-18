@@ -182,6 +182,12 @@ class CustomerController extends Controller
             return redirect(route('customer.index'))->with('toast_error', 'Customer Umum adalah customer bawaan dan tidak dapat dihapus.');
         }
 
+        // Saldo customer hanya catatan, tetapi customer yang masih punya saldo tidak boleh hilang
+        // dari daftar saldo. Hanya hitungan, nominalnya tidak ikut ke pesan (route ini terbuka untuk non-superadmin).
+        if ((float) ($customer->wallet?->balance ?? 0) > 0) {
+            return redirect(route('customer.index'))->with('toast_error', 'Customer ini tidak dapat dihapus karena masih memiliki saldo. Kosongkan saldonya dulu.');
+        }
+
         $customer->delete();
 
         return redirect(route('customer.index'))->with('toast_success', 'Berhasil Menghapus Data!');

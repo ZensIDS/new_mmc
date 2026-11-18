@@ -8,6 +8,7 @@ use App\Http\Controllers\CashierPrintController;
 use App\Http\Controllers\CashierSessionController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\CustomerWalletController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KasController;
 use App\Http\Controllers\LaporanController;
@@ -364,6 +365,19 @@ Route::middleware(['auth', 'role:superadmin'])->prefix('nota-fiktif')->name('not
     Route::get('/{notaFiktif}/edit', [NotaFiktifController::class, 'edit'])->name('edit');
     Route::put('/{notaFiktif}', [NotaFiktifController::class, 'update'])->name('update');
     Route::delete('/{notaFiktif}', [NotaFiktifController::class, 'destroy'])->name('destroy');
+});
+
+// Saldo Customer: HANYA superadmin. Hanya catatan mutasi; tidak menyentuh kasir/penjualan/stok/kas.
+// Sengaja TIDAK di dalam resource /customer (route itu terbuka untuk kasir).
+Route::middleware(['auth', 'role:superadmin'])->prefix('saldo-customer')->name('saldo-customer.')->group(function () {
+    Route::get('/', [CustomerWalletController::class, 'index'])->name('index');
+    Route::get('/{customer}/topup', [CustomerWalletController::class, 'topupForm'])->name('topup');
+    Route::post('/{customer}/topup', [CustomerWalletController::class, 'topupStore'])->name('topup.store');
+    Route::get('/{customer}/kurangi', [CustomerWalletController::class, 'kurangiForm'])->name('kurangi');
+    Route::post('/{customer}/kurangi', [CustomerWalletController::class, 'kurangiStore'])->name('kurangi.store');
+    Route::get('/{customer}/mutasi', [CustomerWalletController::class, 'mutasi'])->name('mutasi');
+    Route::get('/{customer}/mutasi/print', [CustomerWalletController::class, 'mutasiPrint'])->name('mutasi.print');
+    Route::get('/{customer}/mutasi/export', [CustomerWalletController::class, 'mutasiExport'])->name('mutasi.export');
 });
 
 require __DIR__ . '/auth.php';

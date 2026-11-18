@@ -8,6 +8,11 @@
         <h1>
             Transaksi Customer
         </h1>
+        {{-- Saldo: HANYA superadmin yang melihat tombol ini (customer ini dipakai juga oleh role lain). --}}
+        @if (auth()->user()->isSuperadmin() && $customer->canHaveWallet())
+            <a href="{{ Route::has('saldo-customer.mutasi') ? route('saldo-customer.mutasi', $customer) : route('saldo-customer.index', ['q' => $customer->name]) }}"
+               class="btn btn-sm bg-purple" style="margin-top:8px"><i class="fa fa-money"></i> Saldo</a>
+        @endif
     </section>
 
     <!-- Main content -->
