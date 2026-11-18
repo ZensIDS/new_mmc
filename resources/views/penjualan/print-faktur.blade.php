@@ -134,6 +134,7 @@
             <div class="small">CV Kirana Artha Persada</div>
             @if ($penjualan->outlet?->alamat)<div class="small">{{ $penjualan->outlet->alamat }}</div>@endif
             @if ($penjualan->outlet?->desc)<div class="small">{{ $penjualan->outlet->desc }}</div>@endif
+            <div class="small">WhatsApp : +62 878-6133-7577</div>
         </div>
         <div class="col-right">
             <div class="doc-title">NOTA PENJUALAN</div>

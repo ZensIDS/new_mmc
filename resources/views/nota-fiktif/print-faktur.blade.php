@@ -101,6 +101,7 @@
             <div class="store-name">{{ $nota->outlet_nama }}</div>
             <div class="small">CV Kirana Artha Persada</div>
             @if ($nota->outlet_alamat)<div class="small">{{ $nota->outlet_alamat }}</div>@endif
+            <div class="small">WhatsApp : +62 878-6133-7577</div>
         </div>
         <div class="col-right">
             <div class="doc-title">NOTA PENJUALAN</div>
