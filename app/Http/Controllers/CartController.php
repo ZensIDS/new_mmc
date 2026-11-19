@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\OwnerStock;
 use App\Models\OutletPrice;
 use App\Models\Product;
+use App\Models\User;
 use App\Services\PriceCalculator;
 use App\Services\PromotionService;
 use App\Support\OutletAccess;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CartController extends Controller
 {
@@ -119,33 +121,37 @@ class CartController extends Controller
             ]);
             $outletId = OutletAccess::id($request);
             $product = Product::where('code', $request->barcode)->firstOrFail();
+            $user = $request->user();
 
-            $stockQty = OwnerStock::where('owner_id', $outletId)
-                ->where('product_id', $product->id)
-                ->where('qty', '>', 0)
-                ->where(function ($expiryQuery) {
-                    $expiryQuery->whereNull('expired_at')->orWhereDate('expired_at', '>=', today());
-                })
-                ->sum('qty');
-            $cart = $request->user()->cart()
-                ->wherePivot('outlet_id', (string) $outletId)
-                ->where('products.id', $product->id)
-                ->first();
+            // Seluruh penulisan keranjang satu user diserialkan lewat lock baris user.
+            // Tanpa ini, 2 scan berdekatan sama-sama melihat "belum ada di keranjang"
+            // lalu sama-sama INSERT, sehingga produk yang sama muncul sebagai 2 baris.
+            $error = DB::transaction(function () use ($user, $outletId, $product) {
+                $this->lockUserCart($user);
 
-            if ($cart) {
-                if ($stockQty <= $cart->pivot->qty) {
-                    return response(['message' => 'Stok outlet tersedia hanya: ' . $stockQty], 400);
+                $stockQty = $this->availableOutletStock($outletId, $product->id);
+                $rows = $this->cartRows($user, $outletId, $product->id);
+                $currentQty = (int) $rows->sum('qty');
+
+                if ($rows->isNotEmpty()) {
+                    if ($stockQty <= $currentQty) {
+                        return 'Stok outlet tersedia hanya: ' . $stockQty;
+                    }
+                    $this->mergeCartRows($rows, $currentQty + 1);
+
+                    return null;
                 }
-                $cart->pivot->qty++;
-                $cart->pivot->save();
-            } else {
+
                 if ($stockQty < 1) {
-                    return response(['message' => 'Produk tidak memiliki stok di outlet ini.'], 400);
+                    return 'Produk tidak memiliki stok di outlet ini.';
                 }
-                $request->user()->cart()->attach($product->id, [
-                    'qty' => 1,
-                    'outlet_id' => $outletId,
-                ]);
+                $this->insertCartRow($user, $outletId, $product->id, 1);
+
+                return null;
+            });
+
+            if ($error) {
+                return response(['message' => $error], 400);
             }
 
             return response('success', 204);
@@ -166,26 +172,21 @@ class CartController extends Controller
             ]);
             $outletId = OutletAccess::id($request);
             $product = Product::findOrFail($request->product_id);
+            $user = $request->user();
 
-            $stockQty = OwnerStock::where('owner_id', $outletId)
-                ->where('product_id', $product->id)
-                ->where('qty', '>', 0)
-                ->where(function ($expiryQuery) {
-                    $expiryQuery->whereNull('expired_at')->orWhereDate('expired_at', '>=', today());
-                })
-                ->sum('qty');
+            $stockQty = $this->availableOutletStock($outletId, $product->id);
             if ($stockQty < $request->qty) {
                 return response(['message' => 'Stok outlet tersedia hanya: ' . $stockQty], 400);
             }
 
-            $cart = $request->user()->cart()
-                ->wherePivot('outlet_id', (string) $outletId)
-                ->where('products.id', $request->product_id)
-                ->first();
-            if ($cart) {
-                $cart->pivot->qty = $request->qty;
-                $cart->pivot->save();
-            }
+            DB::transaction(function () use ($user, $outletId, $product, $request) {
+                $this->lockUserCart($user);
+                $rows = $this->cartRows($user, $outletId, $product->id);
+                if ($rows->isNotEmpty()) {
+                    // Sekaligus merapikan baris ganda lama (bila ada) menjadi satu baris.
+                    $this->mergeCartRows($rows, (int) $request->qty);
+                }
+            });
 
             return response(['success' => true]);
         } catch (Exception $e) {
@@ -270,11 +271,17 @@ class CartController extends Controller
                 ->wherePivot('outlet_id', (string) $outletId)
                 ->wherePivot('name', $request->name)
                 ->detach();
-            $request->user()->cart()->attach($item->id, [
-                'qty' => $item->pivot->qty,
-                'outlet_id' => $outletId,
-                'owner_stock_id' => $item->pivot->owner_stock_id,
-            ]);
+            DB::transaction(function () use ($request, $item, $outletId) {
+                $user = $request->user();
+                $this->lockUserCart($user);
+                $rows = $this->cartRows($user, $outletId, $item->id);
+                if ($rows->isNotEmpty()) {
+                    // Produk sudah ada di keranjang: gabungkan qty, jangan buat baris baru.
+                    $this->mergeCartRows($rows, (int) $rows->sum('qty') + (int) $item->pivot->qty);
+                } else {
+                    $this->insertCartRow($user, $outletId, $item->id, (int) $item->pivot->qty, $item->pivot->owner_stock_id);
+                }
+            });
         }
 
         return response(['success' => true]);
@@ -297,5 +304,61 @@ class CartController extends Controller
         $request->user()->cart()->wherePivot('outlet_id', (string) $outletId)->detach();
 
         return response('success', 204);
+    }
+
+    /**
+     * Serialkan semua perubahan keranjang milik satu user (harus dipanggil di dalam transaksi).
+     */
+    private function lockUserCart($user): void
+    {
+        User::whereKey($user->getKey())->lockForUpdate()->first();
+    }
+
+    private function cartRows($user, $outletId, int $productId)
+    {
+        return DB::table('user_cart')
+            ->where('user_id', $user->getKey())
+            ->where('outlet_id', (string) $outletId)
+            ->where('product_id', $productId)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    /**
+     * Pertahankan baris pertama dengan qty baru, hapus baris duplikat lainnya.
+     */
+    private function mergeCartRows($rows, int $qty): void
+    {
+        $keep = $rows->first();
+        DB::table('user_cart')->where('id', $keep->id)->update(['qty' => $qty, 'updated_at' => now()]);
+        $duplicateIds = $rows->skip(1)->pluck('id')->all();
+        if ($duplicateIds) {
+            DB::table('user_cart')->whereIn('id', $duplicateIds)->delete();
+        }
+    }
+
+    private function insertCartRow($user, $outletId, int $productId, int $qty, $ownerStockId = null): void
+    {
+        DB::table('user_cart')->insert([
+            'user_id' => $user->getKey(),
+            'product_id' => $productId,
+            'outlet_id' => (string) $outletId,
+            'owner_stock_id' => $ownerStockId,
+            'qty' => $qty,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function availableOutletStock($outletId, int $productId): int
+    {
+        return (int) OwnerStock::where('owner_id', $outletId)
+            ->where('product_id', $productId)
+            ->where('qty', '>', 0)
+            ->where(function ($expiryQuery) {
+                $expiryQuery->whereNull('expired_at')->orWhereDate('expired_at', '>=', today());
+            })
+            ->sum('qty');
     }
 }

@@ -1,7 +1,7 @@
 {{-- Detail satu nota untuk baris yang di-expand di /penjualan (dimuat saat dibuka). --}}
 @php
     $totalCost = 0;
-    foreach ($penjualan->items as $it) {
+    foreach ($penjualan->displayItems() as $it) {
         $totalCost += $it->subtotal ?? ($it->qty * $it->price);
     }
     $discount = $penjualan->discount_total ?? $penjualan->discount ?? 0;
@@ -20,7 +20,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($penjualan->items as $item)
+                    @forelse ($penjualan->displayItems() as $item)
                         <tr>
                             <td>{{ $item->serial_number ?: $item->product?->code }} - {{ $item->product?->name ?? '(produk dihapus)' }}</td>
                             <td class="text-right">{{ $item->qty }}</td>

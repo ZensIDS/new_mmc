@@ -95,6 +95,41 @@ class Penjualan extends Model
         return $this->hasMany(PenjualanItem::class);
     }
 
+    /**
+     * Item untuk TAMPILAN (detail nota, struk, faktur).
+     *
+     * Saat checkout, satu produk bisa terpecah jadi beberapa baris karena diambil dari batch stok
+     * yang berbeda (FIFO) - itu benar untuk stok & HPP, tapi di nota terlihat seperti produk ganda.
+     * Method ini menggabungkan baris dengan produk, harga satuan, harga dasar, dan serial yang sama
+     * menjadi satu baris. Data di database TIDAK diubah, dan objek hasilnya tidak untuk di-save.
+     */
+    public function displayItems()
+    {
+        return $this->items
+            ->groupBy(fn ($item) => implode('|', [
+                $item->product_id,
+                number_format((float) $item->price, 4, '.', ''),
+                number_format((float) ($item->base_price ?? 0), 4, '.', ''),
+                $item->serial_number ?? 'null',
+            ]))
+            ->map(function ($group) {
+                if ($group->count() === 1) {
+                    return $group->first();
+                }
+
+                $merged = clone $group->first();
+                $merged->qty = (int) $group->sum('qty');
+                $merged->subtotal = $group->sum(fn ($item) => (float) ($item->subtotal ?? ((float) $item->qty * (float) $item->price)));
+                $merged->base_subtotal = $group->every(fn ($item) => is_null($item->base_subtotal))
+                    ? null
+                    : $group->sum(fn ($item) => (float) $item->base_subtotal);
+                $merged->promotion_discount = $group->sum(fn ($item) => (float) ($item->promotion_discount ?? 0));
+
+                return $merged;
+            })
+            ->values();
+    }
+
     public function refundPenjualans()
     {
         return $this->hasMany(RefundPenjualan::class);

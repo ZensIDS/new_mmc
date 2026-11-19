@@ -59,7 +59,7 @@
                                     <th>Sub total</th>
                                 </tr>
                                 @php $totalCost = 0; @endphp
-                                @foreach ($penjualan->items as $item)
+                                @foreach ($penjualan->displayItems() as $item)
                                     <tr>
                                         <td>{{ $item->serial_number ? $item->serial_number : $item->product?->code }} - {{ $item->product->name }}</td>
                                         <td>{{ $item->qty }}</td>

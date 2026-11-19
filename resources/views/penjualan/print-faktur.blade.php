@@ -24,7 +24,7 @@
         })();
     </script>
     @php
-        $items = $penjualan->items;
+        $items = $penjualan->displayItems();
         $itemCount = $items->sum(fn ($item) => (int) $item->qty);
 
         // Rumus sama persis dengan struk (print.blade.php) supaya angka konsisten.

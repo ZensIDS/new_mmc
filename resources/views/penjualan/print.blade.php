@@ -36,7 +36,7 @@
         $smallFont = $paper === '58' ? '11px' : '12px';
         $titleFont = $paper === '58' ? '16px' : '20px';
         $totalFont = $paper === '58' ? '15px' : '18px';
-        $items = $penjualan->items;
+        $items = $penjualan->displayItems();
         $itemCount = $items->sum(fn ($item) => (int) $item->qty);
         $subtotalBeforePromotion = $items->sum(fn ($item) => (float) (
             $item->base_subtotal

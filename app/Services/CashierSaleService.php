@@ -29,6 +29,15 @@ class CashierSaleService
             ->withPivot('qty', 'serial_number', 'stock_id', 'owner_stock_id', 'outlet_id')
             ->get();
 
+        // Pengaman terakhir: bila (karena data lama / race) satu produk ada di >1 baris keranjang,
+        // gabungkan menjadi satu baris per produk supaya nota tidak menampilkan produk ganda.
+        $cart = $cart->groupBy('id')->map(function ($rows) {
+            $first = $rows->first();
+            $first->pivot->qty = (int) $rows->sum(fn ($row) => (int) $row->pivot->qty);
+
+            return $first;
+        })->values();
+
         if ($cart->isEmpty()) {
             throw new RuntimeException('Keranjang masih kosong.');
         }

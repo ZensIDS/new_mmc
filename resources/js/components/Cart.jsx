@@ -75,6 +75,9 @@ const Cart = () => {
     const [selectedCartProductId, setSelectedCartProductId] = useState(null);
     const [productModalOpen, setProductModalOpen] = useState(false);
     const barcodeRef = useRef(null);
+    // Antrian tambah-ke-keranjang: scan beruntun diproses satu per satu (bukan paralel),
+    // supaya server tidak menerima 2 request POST /cart sekaligus untuk produk yang sama.
+    const addQueueRef = useRef(Promise.resolve());
     const searchRef = useRef(null);
     const voucherRef = useRef(null);
     const paidRef = useRef(null);
@@ -254,8 +257,7 @@ const Cart = () => {
         };
     }, []);
 
-    const addToCart = (value) => {
-        const code = String(value || "").trim();
+    const addToCartRequest = (code) => {
         const localProduct = products.find((item) => item.barcode === code || item.code === code);
         const productRequest = localProduct
             ? Promise.resolve(localProduct)
@@ -264,13 +266,13 @@ const Cart = () => {
             })
                 .then((response) => (response.data.data || []).find((item) => item.barcode === code || item.code === code));
 
-        productRequest.then((product) => {
+        return productRequest.then((product) => {
             if (!product) {
                 setErrorMessage("Barcode tidak ditemukan pada stok outlet.");
-                return;
+                return null;
             }
 
-            axios.post("/cart", { barcode: product.barcode || product.code, outlet_id: outlet.id })
+            return axios.post("/cart", { barcode: product.barcode || product.code, outlet_id: outlet.id })
                 .then(() => {
                     setBarcode("");
                     setErrorMessage("");
@@ -279,6 +281,12 @@ const Cart = () => {
                 })
                 .catch((error) => setErrorMessage(error.response?.data?.message || "Produk tidak dapat ditambahkan."));
         }).catch(() => setErrorMessage("Barcode tidak ditemukan pada stok outlet."));
+    };
+
+    const addToCart = (value) => {
+        const code = String(value || "").trim();
+        if (!code) return;
+        addQueueRef.current = addQueueRef.current.then(() => addToCartRequest(code)).catch(() => {});
     };
 
     const handleScanBarcode = (event) => {
